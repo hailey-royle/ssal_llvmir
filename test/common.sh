@@ -5,7 +5,7 @@ clean_dir () {
 }
 
 output_passed () {
-	printf "%-*s [\e[32m passed \e[0m]\n" 24 "${PWD##*/}"
+	printf "%-*s [\e[32m passed \e[0m]\n" 24 "${PWD##*/}" >>../test_results.log 2>&1
 	clean_dir
 	exit
 }

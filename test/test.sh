@@ -3,3 +3,7 @@ for D in */; do
 done
 
 wait
+
+sort test_results.log
+rm test_results.log
+
