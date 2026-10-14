@@ -1,7 +1,7 @@
 
 ## ssal to llvmir compiler
 
-**s**ingle **s**tatic **a**signament **l**anguage
+**S**ingle **S**tatic **A**signament **L**anguage
 
 The compiler very unfinished
 
