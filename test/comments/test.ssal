@@ -1,0 +1,7 @@
+{ start { proc...}}
+
+start procedure i32 |:  { programs entry }
+		{ !return 40 }
+		!return 30;
+
+{{ foo } bar }

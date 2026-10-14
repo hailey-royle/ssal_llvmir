@@ -1,0 +1,4 @@
+start procedure i32 |:
+		r1 i32 = 2;
+		r2 i32 = r1;
+		!return r2;
