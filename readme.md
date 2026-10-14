@@ -1,9 +1,9 @@
 
 ## ssal to llvmir compiler
 
-### **s**ingle **s**tatic **a**signament **l**anguage
+**s**ingle **s**tatic **a**signament **l**anguage
 
-**The compiler very unfinished**
+The compiler very unfinished
 
 Compile: `make build`
 
