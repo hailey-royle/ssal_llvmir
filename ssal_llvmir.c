@@ -675,7 +675,7 @@ void output_procedure( syntax_token* procedure ){
 }
 
 void* thread_main( void* argt ){
-        i64 thread_index = (i64) argt;
+	i64 thread_index = (i64) argt;
 	while( 1 ){
 /*
   If a file is ready to be parsed, go parse it.
@@ -720,7 +720,7 @@ void* thread_main( void* argt ){
 			assert( !error );
 			break;
 		}
- 		if( procedures_started_validating < procedure_count ){
+		if( procedures_started_validating < procedure_count ){
 			i32 index = procedure_buffer_index_validating;
 			assert( procedure_buffer[ index ].kind == TOKEN_PROCEDURE );
 			procedure_buffer_index_validating += procedure_buffer[ index ].sibling;
@@ -746,7 +746,7 @@ void* thread_main( void* argt ){
 			assert( !error );
 			break;
 		}
- 		if( procedures_started_outputing < procedure_count ){
+		if( procedures_started_outputing < procedure_count ){
 			i32 index = procedure_buffer_index_outputed;
 			assert( procedure_buffer[ index ].kind == TOKEN_PROCEDURE );
 			procedure_buffer_index_outputed += procedure_buffer[ index ].sibling;
@@ -771,7 +771,7 @@ void* thread_main( void* argt ){
 		assert( write_bytes == output_buffer_count );
 		fclose( fp );
 	}
-        return NULL;
+	return NULL;
 }
 
 i32 main( i32 argc, char* argv[] ){
