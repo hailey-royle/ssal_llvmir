@@ -782,24 +782,24 @@ i32 main( i32 argc, char* argv[] ){
 	i32 name_bytes = strlen( argv[ 1 ]);
 	file_add( argv[ 1 ], name_bytes );
 #ifdef SINGLE_THREAD
-        thread_main( (void*) ( 0 ));
+	thread_main( (void*) ( 0 ));
 #else /* default: use multiple threads */
-        i64 cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
-        assert( cpu_count > 0 );
-        pthread_t thread_array[ cpu_count - 1 ];
+	i64 cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
+	assert( cpu_count > 0 );
+	pthread_t thread_array[ cpu_count - 1 ];
 	i64 i = 0;
-        while( i < cpu_count - 1 ){
-                i32 error = pthread_create( &thread_array[ i ], NULL, thread_main, (void*) i );
-                assert( !error );
+	while( i < cpu_count - 1 ){
+		i32 error = pthread_create( &thread_array[ i ], NULL, thread_main, (void*) i );
+		assert( !error );
 		i += 1;
-        }
-        thread_main( (void*) ( cpu_count - 1 ));
+	}
+	thread_main( (void*) ( cpu_count - 1 ));
 	i = 0;
-        while( i < cpu_count - 1 ){
-                pthread_join( thread_array[ i ], NULL );
+	while( i < cpu_count - 1 ){
+		pthread_join( thread_array[ i ], NULL );
 		i += 1;
-        }
+	}
 #endif /* threading */
 	print_tokens();
-        return 0;
+	return 0;
 }
