@@ -555,7 +555,7 @@ void validate_procedure( syntax_token* procedure ){
 	validate_is_a_type( token );
 	token++;
 	while( token < &procedure[ procedure->sibling ]){
-/*
+/* TODO: validating procedure bodys
 		assert( token->kind == TOKEN_ROUTINE );
 		validate_not_a_global_name( token );
 		validate_exclusive_routine_name( procedure, token );
@@ -572,31 +572,6 @@ void validate_procedure( syntax_token* procedure ){
 	}
 	procedures_finished_validating++;
 }
-
-/*void output_file( source* file ){
-        assert( file != NULL );
-        i32 i = 0;
-        assert( file->token[ i ].kind == TOKEN_PROCEDURE );
-        i32 return_type_index = file->output_bytes + 7;
-        buffer_append( file->output, &file->output_bytes, "define  @main(){\n", 17 );
-        if( strncmp( &file->raw[ file->token[ i ].index ], "entry", 5 ) != 0 ){
-                compiler_error( file, file->token[ i ], "Expected entry point." );
-        }
-        i++;
-        syntax_token return_type = file->token[ i ];
-        assert( return_type.kind == TOKEN_TYPE );
-        buffer_insert( file->output, &file->output_bytes, return_type_index, &file->raw[ return_type.index ], return_type.bytes );
-        i++;
-        assert( file->token[ i ].kind == TOKEN_RETURN );
-        buffer_append( file->output, &file->output_bytes, "\tret ", 5 );
-        buffer_append( file->output, &file->output_bytes, &file->raw[ return_type.index ], return_type.bytes );
-        buffer_append( file->output, &file->output_bytes, " ", 1 );
-        i++;
-        assert( file->token[ i ].kind == TOKEN_NUMBER );
-        buffer_append( file->output, &file->output_bytes, &file->raw[ file->token[ i ].index ], file->token[ i ].bytes );
-        buffer_append( file->output, &file->output_bytes, "\n}\n", 3 );
-        files_finished_output++;
-}*/
 
 void push_output(){
 /* critical section */
