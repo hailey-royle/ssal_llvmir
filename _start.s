@@ -7,16 +7,16 @@ _start:
 	mov rdi, rax   // exit with !return code
 	mov rax, 60
 	syscall
-	jmp exit_syscall   // should never reach
+	jmp exit   // should never reach
 
-.global exit_syscall
-exit_syscall:
+.global exit
+exit:
 	mov rax, 60
 	syscall
-	jmp exit_syscall   // should never reach
+	jmp exit   // should never reach
 
-.global write_syscall
-write_syscall:
+.global write
+write:
 	mov rax, 1
 	syscall
 	ret

@@ -433,51 +433,79 @@ void parse_file( source_file* file ){
 				token = token_next( file );
 				type_token = token_next( file );
 				if( token.kind == TOKEN_IDENTIFIER ){
-					token.kind = TOKEN_REGISTER;
-					syntax_token* statement_token = push_token( token );
-					if( type_token.kind != TOKEN_IDENTIFIER ){
-						compiler_error( token, "Expected type of register" );
-					}
-					type_token.kind = TOKEN_TYPE;
-					push_token( type_token );
-					token = token_next( file );
-					if( token.kind != TOKEN_ASSIGNMENT ){
-						compiler_error( token, "Expected register assignment." );
-					}
-					token = token_next( file );
-					if( token.kind == TOKEN_NUMBER ){
-						push_token( token );
-					} else if( token.kind == TOKEN_IDENTIFIER ){
+					assert( type_token.kind != TOKEN_STATEMENT_END && "Need to special case procedure calls with no arguments" );
+					syntax_token third_token = token_next( file );
+					if( third_token.kind == TOKEN_ASSIGNMENT ){
 						token.kind = TOKEN_REGISTER;
-						push_token( token );
-					} else if( token.kind == TOKEN_ADD ){
-						push_token( token );
+						syntax_token* statement_token = push_token( token );
+						if( type_token.kind != TOKEN_IDENTIFIER ){
+							compiler_error( type_token, "Expected type of register" );
+						}
+						type_token.kind = TOKEN_TYPE;
+						push_token( type_token );
 						token = token_next( file );
 						if( token.kind == TOKEN_NUMBER ){
 							push_token( token );
 						} else if( token.kind == TOKEN_IDENTIFIER ){
 							token.kind = TOKEN_REGISTER;
 							push_token( token );
+						} else if( token.kind == TOKEN_ADD ){
+							push_token( token );
+							token = token_next( file );
+							if( token.kind == TOKEN_NUMBER ){
+								push_token( token );
+							} else if( token.kind == TOKEN_IDENTIFIER ){
+								token.kind = TOKEN_REGISTER;
+								push_token( token );
+							} else {
+								compiler_error( token, "Unexpected add opperand." );
+							}
+							token = token_next( file );
+							if( token.kind == TOKEN_NUMBER ){
+								push_token( token );
+							} else if( token.kind == TOKEN_IDENTIFIER ){
+								token.kind = TOKEN_REGISTER;
+								push_token( token );
+							} else {
+								compiler_error( token, "Unexpected add opperand." );
+							}
 						} else {
-							compiler_error( token, "Unexpected add opperand." );
+							compiler_error( token, "Unexpected register value." );
 						}
 						token = token_next( file );
-						if( token.kind == TOKEN_NUMBER ){
-							push_token( token );
-						} else if( token.kind == TOKEN_IDENTIFIER ){
-							token.kind = TOKEN_REGISTER;
-							push_token( token );
-						} else {
-							compiler_error( token, "Unexpected add opperand." );
+						if( token.kind != TOKEN_STATEMENT_END ){
+							compiler_error( token, "Expected end of statement." );
 						}
+						statement_token->sibling = scratch_count - statement_start;
 					} else {
-						compiler_error( token, "Unexpected register value." );
+						token.kind = TOKEN_CALL;
+						syntax_token* statement_token = push_token( token );
+						token = type_token;
+						if( token.kind == TOKEN_NUMBER ){
+							push_token( token );
+						} else if( token.kind == TOKEN_IDENTIFIER ){
+							token.kind = TOKEN_REGISTER;
+							push_token( token );
+						} else {
+							compiler_error( token, "Unexpected add opperand." );
+						}
+						token = third_token;
+						while( 1 ){
+							if( token.kind == TOKEN_NUMBER ){
+								push_token( token );
+							} else if( token.kind == TOKEN_IDENTIFIER ){
+								token.kind = TOKEN_REGISTER;
+								push_token( token );
+							} else if( token.kind == TOKEN_STATEMENT_END ){
+								break;
+							} else {
+								compiler_error( token, "Unexpected add opperand." );
+							}
+							token = token_next( file );
+						}
+						statement_token->sibling = scratch_count - statement_start;
 					}
-					token = token_next( file );
-					if( token.kind != TOKEN_STATEMENT_END ){
-						compiler_error( token, "Expected end of statement." );
-					}
-					statement_token->sibling = scratch_count - statement_start;
+
 				} else if( token.kind == TOKEN_JUMP ){
 					if( type_token.kind != TOKEN_RETURN ){
 						compiler_error( token, "Expected jump location." );
@@ -533,15 +561,12 @@ void validate_not_a_type( syntax_token* token ){
 	}
 }
 
-void validate_exclusive_global( syntax_token* procedure ){
+void validate_exclusive_procedure( syntax_token* procedure ){
 /* TODO: check for types and global registers */
 	assert( procedure != NULL );
 	assert( procedure->raw != NULL );
 	assert( procedure->bytes > 0 );
 	assert( procedure->kind == TOKEN_PROCEDURE );
-	if( procedure->bytes == 3 && strncmp( procedure->raw, "i32", 3 ) == 0 ){
-		compiler_error( *procedure, "Globals have the same name." );
-	}
 	syntax_token* i = procedure_buffer;
 	while( i < procedure ){
 		if( i->bytes == procedure->bytes && strncmp( i->raw, procedure->raw, i->bytes ) == 0 ){
@@ -549,6 +574,17 @@ void validate_exclusive_global( syntax_token* procedure ){
 		}
 		assert( i->sibling > 0 );
 		i += i->sibling;
+	}
+}
+
+void validate_is_a_procedure( syntax_token* call ){
+	assert( call != NULL );
+	assert( call->raw != NULL );
+	assert( call->bytes > 0 );
+	assert( call->kind == TOKEN_CALL );
+	assert( call->sibling > 0 );
+	if( call->bytes != 4 && strncmp( call->raw, "exit", 4 ) != 0 ){
+		compiler_error( *call, "Procedure call is not a procedure." );
 	}
 }
 
@@ -663,7 +699,7 @@ syntax_token* validate_value( syntax_token* procedure, syntax_token* value ){
 		value = validate_value( procedure, value + 1 );
 		value = validate_value( procedure, value );
 	} else {
-		compiler_error( *value, "Invalide value" );
+		compiler_error( *value, "Invalid value" );
 	}
 	return value;
 }
@@ -674,8 +710,8 @@ void validate_procedure( syntax_token* procedure ){
 	assert( procedure->bytes > 0 );
 	assert( procedure->sibling > 0 );
 	assert( procedure->kind == TOKEN_PROCEDURE );
-	validate_exclusive_global( procedure );
 	validate_not_a_type( procedure );
+	validate_exclusive_procedure( procedure );
 	syntax_token* token = &procedure[ 1 ];
 	assert( token->kind == TOKEN_TYPE );
 	validate_is_a_type( token );
@@ -692,7 +728,7 @@ void validate_procedure( syntax_token* procedure ){
 		validate_is_a_type( token );
 		token++;
 	}
-	assert( token->kind == TOKEN_RETURN || token->kind == TOKEN_REGISTER );
+	assert( token->kind == TOKEN_CALL || token->kind == TOKEN_RETURN || token->kind == TOKEN_REGISTER );
 	while( token < &procedure[ procedure->sibling ]){
 		if( token->kind == TOKEN_REGISTER ){
 			validate_not_a_type( token );
@@ -706,6 +742,13 @@ void validate_procedure( syntax_token* procedure ){
 			token = validate_value( procedure, token );
 			assert( token->kind == TOKEN_ERROR );
 			break;
+		} else if( token->kind == TOKEN_CALL ){
+			validate_is_a_procedure( token );
+			syntax_token* next_statement = token + token->sibling;
+			token++;
+			while( token < next_statement ){
+				token = validate_value( procedure, token );
+			}
 		} else {
 			assert( 0 );
 		}
@@ -809,6 +852,20 @@ void output_llvmir_procedure( syntax_token* procedure ){
 				}
 				buffer_append( (char*) scratch, &scratch_count, "\n}\n", 3 );
 				break;
+			} else if( token->kind == TOKEN_CALL ){
+				assert( token->bytes == 4 && strncmp( token->raw, "exit", token->bytes ) == 0 );
+				buffer_append( (char*) scratch, &scratch_count, "\tcall void @exit( i32", 21 );
+				token++;
+				if( token->kind == TOKEN_NUMBER ){
+					buffer_append( (char*) scratch, &scratch_count, " ", 1 );
+					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
+				} else if( token->kind == TOKEN_REGISTER ){
+					buffer_append( (char*) scratch, &scratch_count, " %", 2 );
+					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
+				} else {
+					assert( 0 );
+				}
+				buffer_append( (char*) scratch, &scratch_count, " )\n", 3 );
 			} else {
 				assert( 0 );
 			}
@@ -911,7 +968,7 @@ void* thread_main( void* argt ){
 /* end critical section */
 	}
 	if( thread_index == 0 ){
-		char* target = "target triple = \"x86_64-unknown-linux-gnu\"\n\n";
+		char* target = "target triple = \"x86_64-unknown-linux-gnu\"\n\ndeclare void @exit( i32 )\n\n";
 		buffer_insert( output_buffer, &output_buffer_count, 0, target, strlen( target ));
 		char* output_name = __builtin_alloca( file_buffer[ 0 ].name_bytes + 4 );
 		memcpy( output_name, file_buffer[ 0 ].name, file_buffer[ 0 ].name_bytes );
