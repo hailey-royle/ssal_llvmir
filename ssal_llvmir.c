@@ -476,7 +476,7 @@ void parse_file( source_file* file ){
 					routine_token->sibling = scratch_count - routine_start;
 					token = token_next( file );
 					type_token = token_next( file );
-/* check for routine */
+/*TODO: check for next routine */
 					procedure_token->sibling = scratch_count - procedure_start;
 					break;
 				} else {
@@ -501,11 +501,21 @@ void validate_is_a_type( syntax_token* token ){
 	}
 }
 
-void validate_exclusive_global_name( syntax_token* procedure ){
-/* handle types and global registers */
+void validate_not_a_type( syntax_token* token ){
+	assert( token != NULL );
+	assert( token->raw != NULL );
+	assert( token->bytes > 0 );
+	if( token->bytes == 3 && strncmp( token->raw, "i32", 3 ) == 0 ){
+		compiler_error( *token, "Must be a type." );
+	}
+}
+
+void validate_exclusive_global( syntax_token* procedure ){
+/* TODO: check for types and global registers */
 	assert( procedure != NULL );
 	assert( procedure->raw != NULL );
 	assert( procedure->bytes > 0 );
+	assert( procedure->kind == TOKEN_PROCEDURE );
 	if( procedure->bytes == 3 && strncmp( procedure->raw, "i32", 3 ) == 0 ){
 		compiler_error( *procedure, "Globals have the same name." );
 	}
@@ -514,33 +524,115 @@ void validate_exclusive_global_name( syntax_token* procedure ){
 		if( i->bytes == procedure->bytes && strncmp( i->raw, procedure->raw, i->bytes ) == 0 ){
 			compiler_error( *procedure, "Globals have the same name." );
 		}
+		assert( i->sibling > 0 );
 		i += i->sibling;
 	}
 }
 
-void validate_not_a_global_name( syntax_token* token ){
-	assert( token != NULL );
-	assert( token->raw != NULL );
-	assert( token->bytes > 0 );
-	if( token->bytes == 3 && strncmp( token->raw, "i32", 3 ) == 0 ){
-		compiler_error( *token, "Has gloabl name." );
-	}
-	syntax_token* i = procedure_buffer;
-	while( i < &procedure_buffer[ procedure_buffer_count ]){
-		if( i->bytes == token->bytes && strncmp( i->raw, token->raw, i->bytes ) == 0 ){
-			compiler_error( *token, "Has gloabl name." );
-		}
-		i += i->sibling;
-	}
-}
-
-void validate_exclusive_register_name( syntax_token* procedure, syntax_token* token ){
+void validate_exclusive_routine( syntax_token* procedure, syntax_token* routine ){
 	assert( procedure != NULL );
 	assert( procedure->raw != NULL );
 	assert( procedure->bytes > 0 );
-	assert( token != NULL );
-	assert( token->raw != NULL );
-	assert( token->bytes > 0 );
+	assert( procedure->kind == TOKEN_PROCEDURE );
+	assert( routine != NULL );
+	assert( routine->raw != NULL );
+	assert( routine->bytes > 0 );
+	assert( routine->kind == TOKEN_ROUTINE );
+	syntax_token* i = procedure;
+	while( i->kind != TOKEN_ROUTINE ){
+		i++;
+	}
+	while( i < routine ){
+		if( i->bytes == routine->bytes && strncmp( i->raw, routine->raw, i->bytes ) == 0 ){
+			compiler_error( *routine, "Routines have the same name." );
+		}
+		assert( i->sibling > 0 );
+		i += i->sibling;
+	}
+}
+
+void validate_exclusive_register( syntax_token* procedure, syntax_token* statement ){
+/* Will break with naked procedure calls or more than one routine */
+	assert( procedure != NULL );
+	assert( procedure->raw != NULL );
+	assert( procedure->bytes > 0 );
+	assert( procedure->kind == TOKEN_PROCEDURE );
+	assert( statement != NULL );
+	assert( statement->raw != NULL );
+	assert( statement->bytes > 0 );
+	assert( statement->kind == TOKEN_REGISTER );
+	syntax_token* i = procedure;
+	while( i->kind != TOKEN_REGISTER ){
+		i++;
+	}
+	while( i < statement ){
+		if( i->bytes == statement->bytes && strncmp( i->raw, statement->raw, i->bytes ) == 0 ){
+			compiler_error( *statement, "Registers have the same name." );
+		}
+		assert( i->sibling > 0 );
+		i += i->sibling;
+	}
+}
+
+void validate_is_a_register( syntax_token* procedure, syntax_token* reg ){
+	assert( procedure != NULL );
+	assert( procedure->raw != NULL );
+	assert( procedure->bytes > 0 );
+	assert( procedure->kind == TOKEN_PROCEDURE );
+	assert( reg != NULL );
+	assert( reg->raw != NULL );
+	assert( reg->bytes > 0 );
+	assert( reg->kind == TOKEN_REGISTER );
+	syntax_token* statement = reg;
+	while( statement->sibling == 0 ){
+		statement -= 1;
+	}
+	syntax_token* i = procedure;
+	while( i->kind != TOKEN_ROUTINE ){
+		i++;
+	}
+	i++;
+	while( i < statement ){
+		if( i->kind == TOKEN_REGISTER ){
+			if( i->bytes == reg->bytes && strncmp( i->raw, reg->raw, i->bytes ) == 0 ){
+				return;
+			}
+			assert( i->sibling > 0 );
+			i += i->sibling;
+		} else if( i->kind == TOKEN_ROUTINE ){
+			assert( 0 );
+		} else if( i->kind == TOKEN_RETURN ){
+			assert( i->sibling > 0 );
+			i += i->sibling;
+		} else {
+			assert( 0 );
+		}
+	}
+	compiler_error( *reg, "Is not a reg" );
+}
+
+syntax_token* validate_value( syntax_token* procedure, syntax_token* value ){
+	assert( procedure != NULL );
+	assert( procedure->raw != NULL );
+	assert( procedure->bytes > 0 );
+	assert( procedure->kind == TOKEN_PROCEDURE );
+	assert( value != NULL );
+	assert( value->raw != NULL );
+	assert( value->bytes > 0 );
+	if( value->kind == TOKEN_NUMBER ){
+/* bounds check */
+		value++;
+	} else if( value->kind == TOKEN_REGISTER ){
+		validate_not_a_type( procedure );
+		validate_is_a_register( procedure, value );
+		value++;
+	} else if( value->kind == TOKEN_ADD ){
+		value = validate_value( procedure, value + 1 );
+		value = validate_value( procedure, value );
+	} else {
+		compiler_error( *value, "Invalide value" );
+	}
+	return value;
 }
 
 void validate_procedure( syntax_token* procedure ){
@@ -549,26 +641,32 @@ void validate_procedure( syntax_token* procedure ){
 	assert( procedure->bytes > 0 );
 	assert( procedure->sibling > 0 );
 	assert( procedure->kind == TOKEN_PROCEDURE );
-	validate_exclusive_global_name( procedure );
+	validate_exclusive_global( procedure );
+	validate_not_a_type( procedure );
 	syntax_token* token = &procedure[ 1 ];
 	assert( token->kind == TOKEN_TYPE );
 	validate_is_a_type( token );
 	token++;
+	assert( token->kind == TOKEN_ROUTINE );
+	validate_not_a_type( token );
+	validate_exclusive_routine( procedure, token );
+	token++;
 	while( token < &procedure[ procedure->sibling ]){
-/* TODO: validating procedure bodys
-		assert( token->kind == TOKEN_ROUTINE );
-		validate_not_a_global_name( token );
-		validate_exclusive_routine_name( procedure, token );
-		token++;
 		if( token->kind == TOKEN_REGISTER ){
-			validate_not_a_global_name( token );
-			validate_exclusive_register_name( procedure, token );
+			validate_not_a_type( procedure );
+			validate_exclusive_register( procedure, token );
+			token++;
+			validate_is_a_type( token );
+			token++;
+			token = validate_value( procedure, token );
 		} else if( token->kind == TOKEN_RETURN ){
+			token++;
+			token = validate_value( procedure, token );
+			assert( token->kind == TOKEN_ERROR );
+			break;
 		} else {
 			assert( 0 );
 		}
-*/
-		break;
 	}
 	procedures_finished_validating++;
 }

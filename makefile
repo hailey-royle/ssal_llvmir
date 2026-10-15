@@ -8,7 +8,7 @@ build:
 debug:
 	time $(COMPILER) ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -Og -ggdb
 
-test:
+test: debug
 ifdef t
 	./ssal_llvmir test/$(t)/test.ssal
 	clang test/$(t)/test.ssal.ll -o $(t)

@@ -37,4 +37,14 @@ setup () {
 	compile_ll
 }
 
+should_not_compile () {
+	clean_dir
+	../../ssal_llvmir test.ssal >test.log 2>&1
+	if [ $? != 0 ]; then
+		if [ ! -f test.ssal.ll ]; then
+			output_passed
+		fi
+	fi
+	printf "%-*s [\e[31m catch error failed \e[0m]\n" 24 "${PWD##*/}"
+}
 
