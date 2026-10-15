@@ -1,20 +1,22 @@
-COMPILER = clang
 SHELL := /bin/bash
 # t := test_name
 
 build:
-	time $(COMPILER) ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -O3
+	time clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -O3
 
 debug:
-	time $(COMPILER) ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -Og -ggdb
+	time clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -Og -ggdb
 
-test: debug
+_start:
+	time clang -c _start.s -o _start.o -masm=intel
+
+test: debug _start
 ifdef t
 	./ssal_llvmir test/$(t)/test.ssal
-	clang test/$(t)/test.ssal.ll -o $(t)
+	clang test/$(t)/test.ssal.ll _start.o -o $(t) -static -nostdlib
 else
 	time $(SHELL) -c "cd test && ./test.sh"
 endif
 
-.PHONY: build debug test clean
+.PHONY: build debug test clean _start
 

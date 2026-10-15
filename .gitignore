@@ -4,6 +4,7 @@
 !readme.md
 !makefile
 !ssal_llvmir.c
+!_start.s
 !test/
 !test/*
 !test/**/test.sh

@@ -692,7 +692,7 @@ void output_llvmir_procedure( syntax_token* procedure ){
 	while( 1 ){
 		assert( procedure->bytes == 5 && strncmp( procedure->raw, "start", 5 ) == 0 );
 		i32 return_type_index = scratch_count + 7;
-		buffer_append( (char*) scratch, &scratch_count, "define  @main(){\n", 17 );
+		buffer_append( (char*) scratch, &scratch_count, "define  @start(){\n", 18 );
 		syntax_token* return_type_token = procedure + 1;
 		assert( return_type_token->kind == TOKEN_TYPE );
 		buffer_insert( (char*) scratch, &scratch_count, return_type_index, return_type_token->raw, return_type_token->bytes );

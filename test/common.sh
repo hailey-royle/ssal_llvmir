@@ -24,7 +24,7 @@ compile_sl () {
 }
 
 compile_ll () {
-	clang test.ssal.ll -o test >test.log 2>&1
+	clang test.ssal.ll ../../_start.o -o test -static -nostdlib >test.log 2>&1
 	if [ $? != 0 ]; then
 		printf "%-*s [\e[31m clang failed \e[0m]\n" 24 "${PWD##*/}"
 		exit
