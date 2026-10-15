@@ -191,7 +191,10 @@ void file_add( char* name, i32 name_bytes ){
 	memcpy( name_null_terminated, name, name_bytes );
 	name_null_terminated[ name_bytes ] = '\0';
 	FILE* fp = fopen( name_null_terminated, "r" );
-	assert( fp != NULL );
+	if( fp == NULL ){
+		printf( "%sError%s Failed to open file '%s'.\n", ANSI_FOREGROUND_RED, ANSI_FOREGROUND_DEFAULT, name_null_terminated );
+		exit( 1 );
+	}
 	i32 error = fseek( fp, 0, SEEK_END );
 	assert( !error );
 	i64 file_length = ftell( fp );
