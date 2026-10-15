@@ -40,12 +40,13 @@ typedef double f64;
 #define TOKEN_CONTITIONAL_JUMP 7
 #define TOKEN_CALL 8
 #define TOKEN_REGISTER 9
-#define TOKEN_TYPE 10
-#define TOKEN_ARRAY 11
-#define TOKEN_ADDRESS 12
-#define TOKEN_STORE 13
-#define TOKEN_LOAD 14
-#define TOKEN_ADD 15
+#define TOKEN_ARGUMENT 10
+#define TOKEN_TYPE 11
+#define TOKEN_ARRAY 12
+#define TOKEN_ADDRESS 13
+#define TOKEN_STORE 14
+#define TOKEN_LOAD 15
+#define TOKEN_ADD 16
 
 #define TOKEN_IDENTIFIER 128
 #define TOKEN_CATEGORY_END 129
@@ -54,23 +55,24 @@ typedef double f64;
 #define TOKEN_ASSIGNMENT 132
 #define TOKEN_EOF 255
 
-char* token_kind_string[ 16 ] = {
-	"error",
-	"number",
-	"procedure",
-	"routine",
-	"structure",
-	"return",
-	"jump",
-	"contitional_jump",
-	"call",
-	"register",
-	"type",
-	"array",
-	"address",
-	"store",
-	"load",
-	"add ",
+char* token_kind_string[ 17 ] = {
+	"error             ",
+	"number            ",
+	"procedure         ",
+	"routine           ",
+	"structure         ",
+	"return            ",
+	"jump              ",
+	"contitional_jump  ",
+	"call              ",
+	"register          ",
+	"argument          ",
+	"type              ",
+	"array             ",
+	"address           ",
+	"store             ",
+	"load              ",
+	"add               ",
 };
 
 typedef struct {
@@ -122,7 +124,7 @@ _Atomic i32 procedures_started_outputing = 0;
 _Atomic i32 procedures_finished_outputing = 0;
 _Atomic i32 procedure_buffer_index_outputed = 0;
 
-_Thread_local u8* scratch[ MAX_SCRATCH_COUNT ];
+_Thread_local u8 scratch[ MAX_SCRATCH_COUNT ];
 _Thread_local i32 scratch_count;
 
 void assert_failed( char* file, i32 line, char* expression ){
@@ -219,7 +221,18 @@ void print_tokens(){
 	printf( "\nTypes:\n\nGlobals:\n\nProcedures:\n" );
 	i32 i = 0;
 	while( i < procedure_buffer_count ){
-		printf( "  %s  \t%d:%d\t[%.*s]\n", token_kind_string[ procedure_buffer[ i ].kind ], procedure_buffer[ i ].sibling, procedure_buffer[ i ].file, procedure_buffer[ i ].bytes, procedure_buffer[ i ].raw );
+		i32 indent;
+		if( procedure_buffer[ i ].kind == TOKEN_PROCEDURE ){
+			indent = 2;
+		} else if( procedure_buffer[ i ].kind == TOKEN_ROUTINE ){
+			indent = 4;
+		} else if( procedure_buffer[ i ].sibling == 0 ){
+			indent = 8;
+		} else {
+			indent = 6;
+		}
+		printf( "%*c%s%*c%d:%d  [%.*s]\n", indent, ' ', token_kind_string[ procedure_buffer[ i ].kind ], 9 - indent, ' ', 
+		        procedure_buffer[ i ].sibling, procedure_buffer[ i ].file, procedure_buffer[ i ].bytes, procedure_buffer[ i ].raw );
 		i++;
 	}
 	printf( "\n" );
@@ -361,11 +374,9 @@ void push_procedure( source_file* file ){
 	scratch_count = 0;
 }
 
-syntax_token* push_token( source_file* file, syntax_token token ){
-	assert( file != NULL );
+syntax_token* push_token( syntax_token token ){
 	assert( token.raw != NULL );
 	assert( token.bytes > 0 );
-	assert( token.sibling == 0 );
 	assert(( token.kind & 0x80 ) == 0 );
 	((syntax_token*)scratch)[ scratch_count ] = token;
 	scratch_count += 1;
@@ -376,10 +387,7 @@ void parse_file( source_file* file ){
 	assert( file != NULL );
 	syntax_token token = token_next( file );
 	syntax_token type_token = token_next( file );
-	while( 1 ){
-		if( token.kind == TOKEN_EOF ){
-			break;
-		}
+	while( token.kind != TOKEN_EOF ){
 		if( token.kind != TOKEN_IDENTIFIER ){
 			compiler_error( token, "Expected name of global register / proceudre / type." );
 		}
@@ -387,23 +395,35 @@ void parse_file( source_file* file ){
 			token.kind = TOKEN_PROCEDURE;
 			assert( scratch_count == 0 );
 			i32 procedure_start = scratch_count;
-			syntax_token* procedure_token = push_token( file, token );
+			syntax_token* procedure_token = push_token( token );
 			token = token_next( file );
 			if( token.kind != TOKEN_IDENTIFIER ){
 				compiler_error( token, "Expected return type." );
 			}
 			token.kind = TOKEN_TYPE;
-			push_token( file, token );
+			push_token( token );
 			token = token_next( file );
 			if( token.kind != TOKEN_CATEGORY_END ){
 				compiler_error( token, "Expected category end '|'." );
 			}
 			type_token.kind = TOKEN_ROUTINE;
 			i32 routine_start = scratch_count;
-			syntax_token* routine_token = push_token( file, type_token );
+			syntax_token* routine_token = push_token( type_token );
 			token = token_next( file );
-			if( token.kind != TOKEN_SIGNATURE_END ){
-				compiler_error( token, "Expected signature end ':'." );
+			while( token.kind != TOKEN_SIGNATURE_END ){
+				if( token.kind != TOKEN_IDENTIFIER ){
+					compiler_error( token, "Expected procedure argument name or signature end." );
+				}
+				token.kind = TOKEN_ARGUMENT;
+				token.sibling = 1;
+				push_token( token );
+				token = token_next( file );
+				if( token.kind != TOKEN_IDENTIFIER ){
+					compiler_error( token, "Expected procedure argument type." );
+				}
+				token.kind = TOKEN_TYPE;
+				push_token( token );
+				token = token_next( file );
 			}
 			while( 1 ){
 				i32 statement_start = scratch_count;
@@ -411,39 +431,39 @@ void parse_file( source_file* file ){
 				type_token = token_next( file );
 				if( token.kind == TOKEN_IDENTIFIER ){
 					token.kind = TOKEN_REGISTER;
-					syntax_token* statement_token = push_token( file, token );
+					syntax_token* statement_token = push_token( token );
 					if( type_token.kind != TOKEN_IDENTIFIER ){
 						compiler_error( token, "Expected type of register" );
 					}
 					type_token.kind = TOKEN_TYPE;
-					push_token( file, type_token );
+					push_token( type_token );
 					token = token_next( file );
 					if( token.kind != TOKEN_ASSIGNMENT ){
 						compiler_error( token, "Expected register assignment." );
 					}
 					token = token_next( file );
 					if( token.kind == TOKEN_NUMBER ){
-						push_token( file, token );
+						push_token( token );
 					} else if( token.kind == TOKEN_IDENTIFIER ){
 						token.kind = TOKEN_REGISTER;
-						push_token( file, token );
+						push_token( token );
 					} else if( token.kind == TOKEN_ADD ){
-						push_token( file, token );
+						push_token( token );
 						token = token_next( file );
 						if( token.kind == TOKEN_NUMBER ){
-							push_token( file, token );
+							push_token( token );
 						} else if( token.kind == TOKEN_IDENTIFIER ){
 							token.kind = TOKEN_REGISTER;
-							push_token( file, token );
+							push_token( token );
 						} else {
 							compiler_error( token, "Unexpected add opperand." );
 						}
 						token = token_next( file );
 						if( token.kind == TOKEN_NUMBER ){
-							push_token( file, token );
+							push_token( token );
 						} else if( token.kind == TOKEN_IDENTIFIER ){
 							token.kind = TOKEN_REGISTER;
-							push_token( file, token );
+							push_token( token );
 						} else {
 							compiler_error( token, "Unexpected add opperand." );
 						}
@@ -459,7 +479,7 @@ void parse_file( source_file* file ){
 					if( type_token.kind != TOKEN_RETURN ){
 						compiler_error( token, "Expected jump location." );
 					}
-					syntax_token* statement_token = push_token( file, type_token );
+					syntax_token* statement_token = push_token( type_token );
 					token = token_next( file );
 					if( token.kind == TOKEN_NUMBER ){
 					} else if( token.kind == TOKEN_IDENTIFIER ){
@@ -467,7 +487,7 @@ void parse_file( source_file* file ){
 					} else {
 						compiler_error( token, "Expected jump argument." );
 					}
-					push_token( file, token );
+					push_token( token );
 					token = token_next( file );
 					if( token.kind != TOKEN_STATEMENT_END ){
 						compiler_error( token, "Expected register value." );
@@ -551,25 +571,30 @@ void validate_exclusive_routine( syntax_token* procedure, syntax_token* routine 
 	}
 }
 
-void validate_exclusive_register( syntax_token* procedure, syntax_token* statement ){
+void validate_exclusive_register( syntax_token* procedure, syntax_token* reg ){
 /* Will break with naked procedure calls or more than one routine */
 	assert( procedure != NULL );
 	assert( procedure->raw != NULL );
 	assert( procedure->bytes > 0 );
 	assert( procedure->kind == TOKEN_PROCEDURE );
-	assert( statement != NULL );
-	assert( statement->raw != NULL );
-	assert( statement->bytes > 0 );
-	assert( statement->kind == TOKEN_REGISTER );
+	assert( reg != NULL );
+	assert( reg->raw != NULL );
+	assert( reg->bytes > 0 );
+	assert( reg->sibling > 0 );
+	assert( reg->kind == TOKEN_REGISTER || reg->kind == TOKEN_ARGUMENT );
 	syntax_token* i = procedure;
-	while( i->kind != TOKEN_REGISTER ){
+	i++;
+	while( i->kind == TOKEN_TYPE ){
 		i++;
 	}
-	while( i < statement ){
-		if( i->bytes == statement->bytes && strncmp( i->raw, statement->raw, i->bytes ) == 0 ){
-			compiler_error( *statement, "Registers have the same name." );
-		}
+	assert( i->kind == TOKEN_ROUTINE );
+	i++;
+	while( i < reg ){
+		assert( i->kind == TOKEN_REGISTER || i->kind == TOKEN_ARGUMENT );
 		assert( i->sibling > 0 );
+		if( i->bytes == reg->bytes && strncmp( i->raw, reg->raw, i->bytes ) == 0 ){
+			compiler_error( *reg, "Registers have the same name." );
+		}
 		i += i->sibling;
 	}
 }
@@ -582,18 +607,23 @@ void validate_is_a_register( syntax_token* procedure, syntax_token* reg ){
 	assert( reg != NULL );
 	assert( reg->raw != NULL );
 	assert( reg->bytes > 0 );
+	assert( reg->sibling == 0 );
 	assert( reg->kind == TOKEN_REGISTER );
 	syntax_token* statement = reg;
 	while( statement->sibling == 0 ){
 		statement -= 1;
 	}
+	assert( statement->kind == TOKEN_RETURN || statement->kind == TOKEN_REGISTER );
 	syntax_token* i = procedure;
-	while( i->kind != TOKEN_ROUTINE ){
+	i++;
+	while( i->kind == TOKEN_TYPE ){
 		i++;
 	}
+	assert( i->kind == TOKEN_ROUTINE );
 	i++;
 	while( i < statement ){
-		if( i->kind == TOKEN_REGISTER ){
+		assert( i->sibling > 0 );
+		if( i->kind == TOKEN_REGISTER || i->kind == TOKEN_ARGUMENT ){
 			if( i->bytes == reg->bytes && strncmp( i->raw, reg->raw, i->bytes ) == 0 ){
 				return;
 			}
@@ -651,9 +681,18 @@ void validate_procedure( syntax_token* procedure ){
 	validate_not_a_type( token );
 	validate_exclusive_routine( procedure, token );
 	token++;
+	while( token->kind == TOKEN_ARGUMENT ){
+		validate_not_a_type( token );
+		validate_exclusive_register( procedure, token );
+		token++;
+		assert( token->kind == TOKEN_TYPE );
+		validate_is_a_type( token );
+		token++;
+	}
+	assert( token->kind == TOKEN_RETURN || token->kind == TOKEN_REGISTER );
 	while( token < &procedure[ procedure->sibling ]){
 		if( token->kind == TOKEN_REGISTER ){
-			validate_not_a_type( procedure );
+			validate_not_a_type( token );
 			validate_exclusive_register( procedure, token );
 			token++;
 			validate_is_a_type( token );
@@ -692,14 +731,23 @@ void output_llvmir_procedure( syntax_token* procedure ){
 	while( 1 ){
 		assert( procedure->bytes == 5 && strncmp( procedure->raw, "start", 5 ) == 0 );
 		i32 return_type_index = scratch_count + 7;
-		buffer_append( (char*) scratch, &scratch_count, "define  @start(){\n", 18 );
+		buffer_append( (char*) scratch, &scratch_count, "define  @start( ", 16 );
 		syntax_token* return_type_token = procedure + 1;
 		assert( return_type_token->kind == TOKEN_TYPE );
 		buffer_insert( (char*) scratch, &scratch_count, return_type_index, return_type_token->raw, return_type_token->bytes );
 		syntax_token* token = return_type_token + 1;
 		assert( token->kind == TOKEN_ROUTINE );
+		token++;
+		if( token->kind == TOKEN_ARGUMENT ){
+			token++;
+			assert( token->kind == TOKEN_TYPE );
+			buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
+			buffer_append( (char*) scratch, &scratch_count, " %", 2 );
+			buffer_append( (char*) scratch, &scratch_count, token[ -1 ].raw, token[ -1 ].bytes );
+			token++;
+		}
+		buffer_append( (char*) scratch, &scratch_count, " ){\n", 4 );
 		while( 1 ){
-			token = token + 1;
 			if( token->kind == TOKEN_REGISTER ){
 				buffer_append( (char*) scratch, &scratch_count, "\t%", 2 );
 				buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
@@ -761,6 +809,7 @@ void output_llvmir_procedure( syntax_token* procedure ){
 			} else {
 				assert( 0 );
 			}
+			token++;
 		}
 		push_output();
 		break;

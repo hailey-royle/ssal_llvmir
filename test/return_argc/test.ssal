@@ -1,0 +1,2 @@
+start procedure i32 | argc i32:
+		!return argc;
