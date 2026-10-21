@@ -7,13 +7,10 @@ build:
 debug:
 	clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -Og -ggdb
 
-_start:
-	clang -c _start.s -o _start.o -masm=intel
-
-test: debug _start
+test: debug
 ifdef t
 	./ssal_llvmir test/$(t)/test.ssal
-	clang test/$(t)/test.ssal.ll _start.o -o $(t) -static -nostdlib
+	clang test/$(t)/test.ll _start.s -o $(t) -masm=intel -static -nostdlib
 else
 	$(SHELL) -c "cd test && ./test.sh"
 endif

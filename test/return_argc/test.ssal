@@ -1,2 +1,2 @@
-start procedure i32 | argc i32:
-		!return argc;
+start procedure i32 : argument [][]i8:
+		!(return <argument count>)

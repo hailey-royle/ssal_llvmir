@@ -1,2 +1,0 @@
-start procedure i32 |:
-		!return reg;

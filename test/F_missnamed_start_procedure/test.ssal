@@ -1,0 +1,2 @@
+foo procedure i32 : argument [][]i8:
+		!return 0;

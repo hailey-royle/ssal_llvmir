@@ -1,2 +1,2 @@
-start procedure i32 |:
-		!return 0;
+start procedure i32 : argument [][]i8:
+	!(return 0)

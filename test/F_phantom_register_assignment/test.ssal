@@ -1,0 +1,4 @@
+start procedure i32 : argument [][]i8:
+		reg i32 = bar
+		bar i32 = 0
+		!(return reg)
