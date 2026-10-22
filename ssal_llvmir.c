@@ -984,6 +984,12 @@ void output_llvmir_procedure( i32 procedure_index ){
 			} else if( token->kind == TOKEN_USE ){
 				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			} else if( token->kind == TOKEN_COMPOSITE ){
+				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+				token++;
+				buffer_append( (char*) scratch, &scratch_count, ".", 1 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
 			} else {
 				assert( 0 );
 			}
