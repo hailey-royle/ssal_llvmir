@@ -1,0 +1,3 @@
+start procedure i32 : argument [][]i8:
+	log_error i8 = (log [argument 0])
+	!(return 0)
