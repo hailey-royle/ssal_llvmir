@@ -1266,6 +1266,9 @@ void* thread_main( void* argt ){
 			output_procedure( index );
 		}
 	}
+#ifndef SINGLE_THREAD
+	pthread_barrier_wait( &thread_sync );
+#endif
 	if( thread_index == 0 ){
 		char* target = "target triple = \"x86_64-unknown-linux-gnu\"\n\n"
 		               "declare void @exit( i32 )\n\n";
