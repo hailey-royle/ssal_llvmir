@@ -945,6 +945,26 @@ void push_output(){
 	scratch_count = 0;
 }
 
+syntax_token* output_llvmir_value( syntax_token* token ){
+	assert( token != NULL );
+	if( token->kind == TOKEN_NUMBER ){
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else if( token->kind == TOKEN_USE ){
+		buffer_append( (char*) scratch, &scratch_count, "%", 1 );
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else if( token->kind == TOKEN_COMPOSITE ){
+		buffer_append( (char*) scratch, &scratch_count, "%", 1 );
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+		token++;
+		buffer_append( (char*) scratch, &scratch_count, ".", 1 );
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else {
+		assert( 0 );
+	}
+	token++;
+	return token;
+}
+
 void output_llvmir_procedure( i32 procedure_index ){
 	assert( procedure_index >= 0 );
 	syntax_token* procedure_token = &procedure[ procedure_index ];
@@ -978,23 +998,9 @@ void output_llvmir_procedure( i32 procedure_index ){
 			buffer_append( (char*) scratch, &scratch_count, "\tret ", 5 );
 			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ return_type_token->raw_index ], return_type_token->bytes );
 			token++;
-			if( token->kind == TOKEN_NUMBER ){
-				buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			} else if( token->kind == TOKEN_USE ){
-				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			} else if( token->kind == TOKEN_COMPOSITE ){
-				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				token++;
-				buffer_append( (char*) scratch, &scratch_count, ".", 1 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			} else {
-				assert( 0 );
-			}
+			buffer_append( (char*) scratch, &scratch_count, " ", 1 );
+			token = output_llvmir_value( token );
 			buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
-			token++;
 		} else if( token->kind == TOKEN_CALL ){
 			buffer_append( (char*) scratch, &scratch_count, "\tcall void @", 12 );
 			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
@@ -1018,39 +1024,25 @@ void output_llvmir_procedure( i32 procedure_index ){
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
 				buffer_append( (char*) scratch, &scratch_count, " 0, ", 4 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+				token++;
 			} else if( token->kind == TOKEN_USE ){
 				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
 				buffer_append( (char*) scratch, &scratch_count, " 0, %", 5 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+				token++;
 			} else if( token->kind == TOKEN_CALL ){
 				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
 				token++;
-				if( token->kind == TOKEN_NUMBER ){
-					buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				} else if( token->kind == TOKEN_USE ){
-					buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				} else {
-					assert( 0 );
-				}
-				token++;
-				if( token->kind == TOKEN_NUMBER ){
-					buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
-					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				} else if( token->kind == TOKEN_USE ){
-					buffer_append( (char*) scratch, &scratch_count, ", %", 3 );
-					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				} else {
-					assert( 0 );
-				}
+				buffer_append( (char*) scratch, &scratch_count, " ", 1 );
+				token = output_llvmir_value( token );
+				buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
+				token = output_llvmir_value( token );
 			} else {
 				assert( 0 );
 			}
 			buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
-			token++;
 		} else {
 			assert( 0 );
 		}
