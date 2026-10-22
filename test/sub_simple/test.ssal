@@ -1,5 +1,5 @@
 start procedure i32 : argument [][]i8:
-		r1 i32 = (sub 2 1)
+		r1 i32 = (sub 4 1)
 		r2 i32 = (sub 10 r1)
 		r3 i32 = (sub r2 r1)
 		!(return r3)
