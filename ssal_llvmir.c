@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 600 /* pthread_barrier_t and related */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -149,6 +151,8 @@ pthread_mutex_t output_mutex;
 
 _Thread_local u8 scratch[ MAX_SCRATCH_COUNT ];
 _Thread_local i32 scratch_count = 0;
+
+pthread_barrier_t thread_sync;
 
 void assert_failed( char* file, i32 line, char* expression ){
 	fprintf( stderr, "%s%s:%d%s \"%s\"\n", ANSI_FOREGROUND_RED, file, line, ANSI_FOREGROUND_DEFAULT, expression );
@@ -977,6 +981,9 @@ void output_llvmir_procedure( i32 procedure_index ){
 			if( token->kind == TOKEN_NUMBER ){
 				buffer_append( (char*) scratch, &scratch_count, " ", 1 );
 				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			} else if( token->kind == TOKEN_USE ){
+				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
 			} else {
 				assert( 0 );
 			}
@@ -994,6 +1001,27 @@ void output_llvmir_procedure( i32 procedure_index ){
 				assert( 0 );
 			}
 			buffer_append( (char*) scratch, &scratch_count, " )\n", 3 );
+			token++;
+		} else if( token->kind == TOKEN_REGISTER ){
+			buffer_append( (char*) scratch, &scratch_count, "\t%", 2 );
+			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			token++;
+			token++;
+			if( token->kind == TOKEN_NUMBER ){
+				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
+				buffer_append( (char*) scratch, &scratch_count, " 0, ", 4 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			} else if( token->kind == TOKEN_USE ){
+				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
+				buffer_append( (char*) scratch, &scratch_count, " 0, %", 5 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			} else {
+				compiler_error( *token, "hi" );
+				assert( 0 );
+			}
+			buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
 			token++;
 		} else {
 			assert( 0 );
@@ -1113,7 +1141,6 @@ void output_llvmir_procedure( syntax_token* procedure ){
 }
 */
 
-
 void output_procedure( i32 index ){
 	assert( index >= 0 );
 	syntax_token* procedure_token = &procedure[ index ];
@@ -1193,6 +1220,9 @@ void* thread_main( void* argt ){
 			validate_procedure( index );
 		}
 	}
+#ifndef SINGLE_THREAD
+	pthread_barrier_wait( &thread_sync );
+#endif
 	{
 		while( 1 ){
 			i32 index = __atomic_fetch_add( &types_started_outputing, 1, __ATOMIC_ACQ_REL );
@@ -1293,6 +1323,7 @@ i32 main( i32 argc, char* argv[] ){
 #else /* default: use multiple threads */
 	i64 cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
 	assert( cpu_count > 0 );
+	pthread_barrier_init( &thread_sync, NULL, cpu_count );
 	pthread_t thread_array[ cpu_count - 1 ];
 	i64 i = 0;
 	while( i < cpu_count - 1 ){
