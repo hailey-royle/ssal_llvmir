@@ -65,7 +65,7 @@ __start_call_start:
 /* move start's return value to rdi and fallthrough into exit */
 	mov rdi, rax
 
-/* exit the program */
+/* exit procedure: code i32: */
 .global exit
 exit:
 	mov rax, 60
@@ -74,9 +74,30 @@ exit:
 /* should never reach this point, if the syscall fails, try again */
 	jmp exit
 
-.global write
-write:
+/*
+  log procedure i32: buffer []i8:
+  write the contents of buffer to stdout.
+  procedure arguments:
+    rdi - <buffer count>
+    rsi - <buffer capacity>
+    rdx - <buffer data>
+  syscall write arguments:
+    rdi - fd
+    rsi - <buffer data>
+    rdx - <buffer count>
+    rax - 0
+  the write syscall will return between -4095 and -1 if error, and the number of bytes written if not.
+  log returns 0 if the number of bytes written is <buffer count> and not zero (1) otherwise.
+*/
+.global log
+log:
 	mov rax, 1
+	mov rsi, rdx
+	mov rdx, rdi
+	mov rdi, 1
 	syscall
+	cmp rax, rdi
+	mov rax, 0
+	cmove rax, rdi
 	ret
 
