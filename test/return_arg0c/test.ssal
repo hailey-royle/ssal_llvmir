@@ -1,0 +1,2 @@
+start procedure i32 : argument [][]i8:
+	!(return <[argumnt 0] count> )
