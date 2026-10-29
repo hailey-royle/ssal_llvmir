@@ -161,6 +161,8 @@ pthread_mutex_t output_mutex;
 _Thread_local u8 scratch[ MAX_SCRATCH_COUNT ];
 _Thread_local i32 scratch_count = 0;
 
+i8 found_start_procedure = 0;
+
 pthread_barrier_t thread_sync_barrier;
 
 void assert_failed( char* file, i32 line, char* expression ){
@@ -1147,8 +1149,12 @@ void validate_procedure( i32 procedure_index ){
 	if( procedure[ procedure_index ].flags & FLAG_EXTERNAL ){
 		return;
 	}
-	{ /* exclusive procedure */
+	{
+/* validate exclusive procedure */
 		syntax_token token = procedure[ procedure_index ];
+		if( found_start_procedure == 0 && token.bytes == 5 && memcmp( &file_buffer[ token.raw_index ], "start", 5 ) == 0 ){
+			found_start_procedure = 1;
+		}
 		syntax_token* i = procedure;
 		while( i < &procedure[ procedure_index ]){
 			if( i->bytes == token.bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token.raw_index ], token.bytes ) == 0 ){
@@ -1330,7 +1336,6 @@ void output_llvmir_procedure( i32 procedure_index ){
 		buffer_append( (char*) scratch, &scratch_count, " )\n\n", 4 );
 	} else {
 		buffer_append( (char*) scratch, &scratch_count, "define ", 7 );
-		i32 return_type_index = scratch_count;
 		syntax_token* token = &statement[ procedure_token->child_index ];
 		output_llvmir_type( token );
 		buffer_append( (char*) scratch, &scratch_count, " @", 2 );
@@ -1527,6 +1532,10 @@ void* thread_main( void* argt ){
 		}
 	}
 	thread_sync();
+	if( thread_index == 0 && !found_start_procedure ){
+		printf( "%sError%s 'start' procedure not found.", ANSI_FOREGROUND_RED, ANSI_FOREGROUND_DEFAULT );
+		exit( 1 );
+	}
 	{
 		while( 1 ){
 			i32 index = __atomic_fetch_add( &types_started_outputing, 1, __ATOMIC_ACQ_REL );
