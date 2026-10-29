@@ -17,5 +17,5 @@ else
 	$(SHELL) -c "cd test && ./test.sh"
 endif
 
-.PHONY: build debug test clean _start
+.PHONY: build debug test
 
