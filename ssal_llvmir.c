@@ -39,46 +39,51 @@ typedef double f64;
 
 #define MAX_IDENTIFIER_COUNT 256
 
+#define NUMBER_ERROR 0
+#define NUMBER_INTEGER 1
+#define NUMBER_NEGITIVE_INTEGER 2
+#define NUMBER_FLOAT 3
+#define NUMBER_NEGITIVE_FLOAT 4
+#define NUMBER_HEX 5
+#define NUMBER_BINARY 6
+
 #define TOKEN_ERROR 0
 #define TOKEN_PROCEDURE 1
 #define TOKEN_ROUTINE 2
 #define TOKEN_CALL 3
-#define TOKEN_RETURN 4
-#define TOKEN_JUMP 5
-#define TOKEN_CONDITIONAL 6
-#define TOKEN_REGISTER 7
-#define TOKEN_ARGUMENT 8
-#define TOKEN_USE 9
-#define TOKEN_NUMBER 10
-#define TOKEN_STRING 11
-#define TOKEN_ADDRESS 12
-#define TOKEN_TYPE 13
-#define TOKEN_ARRAY 14
-#define TOKEN_INDEX 15
-#define TOKEN_COMPOSITE 16
-#define TOKEN_MEMBER 17
+#define TOKEN_JUMP 4
+#define TOKEN_CONDITIONAL 5
+#define TOKEN_REGISTER 6
+#define TOKEN_ARGUMENT 7
+#define TOKEN_USE 8
+#define TOKEN_NUMBER 9
+#define TOKEN_STRING 10
+#define TOKEN_ADDRESS 11
+#define TOKEN_TYPE 12
+#define TOKEN_ARRAY 13
+#define TOKEN_INDEX 14
+#define TOKEN_COMPOSITE 15
 
 #define TOKEN_IDENTIFIER 128
 #define TOKEN_SIGNATURE_END 130
 #define TOKEN_ASSIGNMENT 132
 #define TOKEN_EXPRESSION_START 133
 #define TOKEN_EXPRESSION_END 134
-#define TOKEN_ARRAY_START 133
-#define TOKEN_ARRAY_END 134
-#define TOKEN_COMPOSITE_START 135
-#define TOKEN_COMPOSITE_END 136
+#define TOKEN_ARRAY_START 135
+#define TOKEN_ARRAY_END 136
+#define TOKEN_COMPOSITE_START 137
+#define TOKEN_COMPOSITE_END 138
 
 #define TOKEN_EOF 255
 
 #define FLAG_INTRENSIC 0x1
+#define FLAG_EXTERNAL 0x2
 
-/*
 char* token_kind_string[ 256 ] = {
 	"error       ",
 	"procedure   ",
 	"routine     ",
 	"call        ",
-	"return      ",
 	"jump        ",
 	"contitional ",
 	"register    ",
@@ -91,9 +96,13 @@ char* token_kind_string[ 256 ] = {
 	"array       ",
 	"index       ",
 	"composite   ",
-	"member      ",
 };
-*/
+
+typedef struct {
+	u64 integer;
+	u64 fraction;
+	u8 kind;
+} number_literal;
 
 typedef struct {
 	i32 raw_index;
@@ -102,7 +111,7 @@ typedef struct {
 	u8 bytes;
 	u8 kind;
 	u8 flags;
-	u8 padding;
+/*	u8 padding; */
 } syntax_token;
 
 typedef struct {
@@ -152,7 +161,7 @@ pthread_mutex_t output_mutex;
 _Thread_local u8 scratch[ MAX_SCRATCH_COUNT ];
 _Thread_local i32 scratch_count = 0;
 
-pthread_barrier_t thread_sync;
+pthread_barrier_t thread_sync_barrier;
 
 void assert_failed( char* file, i32 line, char* expression ){
 	fprintf( stderr, "%s%s:%d%s \"%s\"\n", ANSI_FOREGROUND_RED, file, line, ANSI_FOREGROUND_DEFAULT, expression );
@@ -246,15 +255,106 @@ void file_add( char* name, i32 name_bytes ){
 	fclose( fp );
 }
 
+void print_tokens(){
+	i32 i = 0;
+	while( i < procedure_count ){
+		if( procedure[ i ].flags & FLAG_INTRENSIC ){
+			printf( "procedure  [%.*s]\n\tintrensic\n\n", procedure[ i ].bytes, &file_buffer[ procedure[ i ].raw_index ]);
+		} else {
+			printf( "procedure  [%.*s]\n", procedure[ i ].bytes, &file_buffer[ procedure[ i ].raw_index ]);
+			i32 j = procedure[ i ].child_index;
+			while( j < procedure[ i ].child_index + procedure[ i ].child_count ){
+				if( statement[ j ].kind == TOKEN_ROUTINE ){
+					printf( "\t%s        %d [%.*s]\n", token_kind_string[ statement[ j ].kind ], statement[ j ].child_count, statement[ j ].bytes, &file_buffer[ statement[ j ].raw_index ]);
+				} else {
+					printf( "\t\t%s%d [%.*s]\n", token_kind_string[ statement[ j ].kind ], statement[ j ].child_count, statement[ j ].bytes, &file_buffer[ statement[ j ].raw_index ]);
+				}
+				j++;
+			}
+		}
+		i++;
+	}
+}
+
 _Atomic i32 found_error = 0;
 
 void compiler_error( syntax_token token, char* message ){
 /* absolute hack to prevent multiple threads trying to report errors at the same time. */
 	if( found_error == 0 ) found_error = 1; else sleep( 1 );
-	printf( "Error %s token{ .raw_index = %d .child_index = %d .child_count = %d .bytes = %d .kind = %d }\n%s\n",
-	        message, token.raw_index, token.child_index, token.child_count, token.bytes, token.kind, &file_buffer[ token.raw_index ]
+	printf( "%sError%s %s    token{ .raw_index = %d .child_index = %d .child_count = %d .bytes = %d .kind = %d }\n\n%s\n\n",
+	        ANSI_FOREGROUND_RED, ANSI_FOREGROUND_DEFAULT, message, token.raw_index, token.child_index, token.child_count, token.bytes, token.kind, &file_buffer[ token.raw_index ]
 	);
 	exit( 1 );
+}
+
+number_literal token_to_number_literal( syntax_token token ){
+	assert( token.kind == TOKEN_NUMBER );
+	assert( token.bytes > 0 );
+	char* raw_number = &file_buffer[ token.raw_index ];
+	i32 raw_index = 0;
+	number_literal number = { 0 };
+	if( raw_number[ raw_index ] == '0' ){
+		raw_index += 1;
+		if( token.bytes == 1 ){
+/* just 0, do nothing */
+		} else if( raw_number[ raw_index ] == 'x' ){
+			raw_index += 1;
+			number.kind = NUMBER_HEX;
+			while( raw_index < token.bytes ){
+				number.integer <<= 4;
+				if( raw_number[ raw_index ] >= '0' && raw_number[ raw_index ] <= '9' ){
+					number.integer |= raw_number[ raw_index ] & 0xf;
+				} else if( raw_number[ raw_index ] >= 'a' && raw_number[ raw_index ] <= 'f' ){
+					number.integer |= ( raw_number[ raw_index ] & 0xf ) + 9;
+				} else {
+					assert( raw_number[ raw_index ] == '_' );
+				}
+				raw_index += 1;
+			}
+		} else if( raw_number[ raw_index ] == 'b' ){
+			raw_index += 1;
+			number.kind = NUMBER_BINARY;
+			while( raw_index < token.bytes ){
+				number.integer <<= 1;
+				if( raw_number[ raw_index ] == '1' ){
+					number.integer |= 1;
+				} else {
+					assert( raw_number[ raw_index ] == '0' || raw_number[ raw_index ] == '_' );
+				}
+				raw_index += 1;
+			}
+		}
+	} else {
+		number.kind = NUMBER_INTEGER;
+		if( raw_number[ raw_index ] == '-' ){
+			assert( token.bytes > 1 );
+			raw_index += 1;
+			number.kind = NUMBER_NEGITIVE_INTEGER;
+		}
+		while( raw_index < token.bytes ){
+			if( raw_number[ raw_index ] >= '0' && raw_number[ raw_index ] <= '9' ){
+				number.integer *= 10;
+				number.integer |= raw_number[ raw_index ] & 0xf;
+			} else if( raw_number[ raw_index ] == '.' ){
+				number.kind = ( number.kind == NUMBER_NEGITIVE_INTEGER ) ? NUMBER_NEGITIVE_FLOAT : NUMBER_FLOAT;
+				while( raw_index < token.bytes ){
+					if( raw_number[ raw_index ] >= '0' && raw_number[ raw_index ] <= '9' ){
+						number.fraction *= 10;
+						number.fraction |= raw_number[ raw_index ] & 0xf;
+					} else {
+						assert( raw_number[ raw_index ] == '_' );
+					}
+					raw_index += 1;
+				}
+				assert( raw_index == token.bytes );
+				break;
+			} else {
+				assert( raw_number[ raw_index ] == '_' );
+			}
+			raw_index += 1;
+		}
+	}
+	return number;
 }
 
 syntax_token next_token( source_file* file ){
@@ -304,8 +404,6 @@ syntax_token next_token( source_file* file ){
 			token.kind = TOKEN_PROCEDURE;
 		} else if( token.bytes == 7 && strncmp( &file_buffer[ token.raw_index ], "routine", 7 ) == 0 ){
 			token.kind = TOKEN_ROUTINE;
-		} else if( token.bytes == 6 && strncmp( &file_buffer[ token.raw_index ], "return", 6 ) == 0 ){
-			token.kind = TOKEN_RETURN;
 		} else {
 			token.kind = TOKEN_IDENTIFIER;
 		}
@@ -416,7 +514,7 @@ void parse_expression( source_file* file, syntax_token token ){
 		if( token.kind != TOKEN_IDENTIFIER ){
 			compiler_error( token, "Array index must start with name of array." );
 		}
-		token.kind = TOKEN_ARRAY;
+		token.kind = TOKEN_INDEX;
 		syntax_token* expression = push_token( token );
 		i32 expression_start = scratch_count;
 		parse_expression( file, next_token( file ));
@@ -434,10 +532,10 @@ void parse_expression( source_file* file, syntax_token token ){
 		syntax_token* expression = push_token( token );
 		i32 expression_start = scratch_count;
 		token = next_token( file );
-		if( token.kind == TOKEN_ARRAY_START || token.kind == TOKEN_COMPOSITE_START ){
+		if( token.kind == TOKEN_ARRAY_START ){
 			parse_expression( file, token );
 		} else if( token.kind == TOKEN_IDENTIFIER ){
-			token.kind = TOKEN_MEMBER;
+			token.kind = TOKEN_COMPOSITE;
 			push_token( token );
 		} else {
 			compiler_error( token, "Composite member can only be a member, sub member, or array index." );
@@ -456,13 +554,25 @@ void parse_type( source_file* file, syntax_token token ){
 	assert( file != NULL );
 	assert( token.bytes > 0 );
 	assert( token.kind != TOKEN_ERROR );
+	syntax_token* type_token = NULL;
+	i32 type_start = 0;
 	while( token.kind != TOKEN_IDENTIFIER ){
 		if( token.kind == TOKEN_ADDRESS ){
-			push_token( token );
+			if( type_token == NULL ){
+				type_token = push_token( token );
+				type_start = scratch_count;
+			} else {
+				push_token( token );
+			}
 			token = next_token( file );
 		} else if( token.kind == TOKEN_ARRAY_START ){
 			token.kind = TOKEN_ARRAY;
-			push_token( token );
+			if( type_token == NULL ){
+				type_token = push_token( token );
+				type_start = scratch_count;
+			} else {
+				push_token( token );
+			}
 			token = next_token( file );
 			if( token.kind != TOKEN_ARRAY_END ){
 				parse_expression( file, token );
@@ -477,7 +587,13 @@ void parse_type( source_file* file, syntax_token token ){
 		}
 	}
 	token.kind = TOKEN_TYPE;
-	push_token( token );
+	if( type_token == NULL ){
+		type_token = push_token( token );
+		type_start = scratch_count;
+	} else {
+		push_token( token );
+	}
+	type_token->child_count = scratch_count - type_start;
 }
 
 void parse_arguments( source_file* file ){
@@ -488,9 +604,11 @@ void parse_arguments( source_file* file ){
 			compiler_error( token, "Expected argument name." );
 		}
 		token.kind = TOKEN_ARGUMENT;
-		push_token( token );
+		syntax_token* argument_token = push_token( token );
+		i32 argument_start = scratch_count;
 		parse_type( file, next_token( file ));
 		token = next_token( file );
+		argument_token->child_count = scratch_count - argument_start;
 	}
 }
 
@@ -504,12 +622,10 @@ void parse_jump( source_file* file, syntax_token token ){
 		push_token( token );
 	} else if( token.kind == TOKEN_EXPRESSION_START ){
 		token = next_token( file );
-		if( token.kind == TOKEN_IDENTIFIER ){
-			token.kind = TOKEN_JUMP;
-		} else if( token.kind == TOKEN_RETURN ){
-		} else {
+		if( token.kind != TOKEN_IDENTIFIER ){
 			compiler_error( token, "Expected jump location." );
 		}
+		token.kind = TOKEN_JUMP;
 		syntax_token* statement_token = push_token( token );
 		i32 statement_start = scratch_count;
 		token = next_token( file );
@@ -568,7 +684,7 @@ void parse_file( source_file* file ){
 				} else if( token.kind == TOKEN_CONDITIONAL ){
 					syntax_token* statement_token = push_token( token );
 					i32 statement_start = scratch_count;
-					parse_expression( file, token );
+					parse_expression( file, next_token( file ));
 					parse_jump( file, next_token( file ));
 					parse_jump( file, next_token( file ));
 					statement_token->child_count = scratch_count - statement_start;
@@ -660,6 +776,7 @@ void parse_file( source_file* file ){
 }
 
 void validate_is_type( syntax_token* token ){
+	assert( token != NULL );
 	assert( token->kind == TOKEN_TYPE || token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS );
 	while( token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
 		token++;
@@ -672,9 +789,11 @@ void validate_is_type( syntax_token* token ){
 		i++;
 	}
 	compiler_error( *token, "Expected type." );
+	return;
 }
 
 void validate_is_not_type( syntax_token* token ){
+	assert( token != NULL );
 	syntax_token* i = type;
 	while( i < &type[ type_count ]){
 		if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
@@ -685,6 +804,7 @@ void validate_is_not_type( syntax_token* token ){
 }
 
 void validate_is_not_global_register( syntax_token* token ){
+	assert( token != NULL );
 	syntax_token* i = global_register;
 	while( i < &global_register[ global_register_count ]){
 		if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
@@ -695,6 +815,7 @@ void validate_is_not_global_register( syntax_token* token ){
 }
 
 void validate_is_not_procedure( syntax_token* token ){
+	assert( token != NULL );
 	syntax_token* i = procedure;
 	while( i < &procedure[ procedure_count ]){
 		if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
@@ -709,7 +830,7 @@ void validate_is_not_routine( syntax_token procedure, syntax_token* token ){
 	assert( token > &statement[ procedure.child_index ]);
 	assert( token < &statement[ procedure.child_index + procedure.child_count ]);
 	syntax_token* i = &statement[ procedure.child_index ];
-	while( token->kind == TOKEN_TYPE || token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
+	while( i->kind == TOKEN_TYPE || i->kind == TOKEN_ARRAY || i->kind == TOKEN_ADDRESS ){
 		i++;
 	}
 	assert( i->kind == TOKEN_ROUTINE );
@@ -717,15 +838,15 @@ void validate_is_not_routine( syntax_token procedure, syntax_token* token ){
 		assert( i->kind == TOKEN_ROUTINE );
 		assert( i->child_count > 0 );
 		if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
-			return;
+			compiler_error( *token, "Name collision with routine." );
 		}
-		i += i->child_count;
+		i += i->child_count + 1;
 	}
-	compiler_error( *token, "Name collision with routine." );
 }
 
 void validate_exclusive_register( syntax_token procedure, syntax_token* token ){
 	assert( procedure.kind == TOKEN_PROCEDURE );
+	assert( token != NULL );
 	assert( token > &statement[ procedure.child_index ]);
 	assert( token < &statement[ procedure.child_index + procedure.child_count ]);
 	validate_is_not_type( token );
@@ -733,17 +854,87 @@ void validate_exclusive_register( syntax_token procedure, syntax_token* token ){
 	validate_is_not_procedure( token );
 	validate_is_not_routine( procedure, token );
 	syntax_token* i = &statement[ procedure.child_index ];
-	while( token->kind == TOKEN_TYPE || token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
+	while( i->kind == TOKEN_TYPE || i->kind == TOKEN_ARRAY || i->kind == TOKEN_ADDRESS ){
 		i++;
 	}
 	assert( i->kind == TOKEN_ROUTINE );
 	while( i < token ){
-		assert( i->kind == TOKEN_ROUTINE || i->kind == TOKEN_REGISTER || i->kind == TOKEN_ARGUMENT || i->kind == TOKEN_CALL || i->kind == TOKEN_JUMP || i->kind == TOKEN_RETURN || i->kind == TOKEN_CONDITIONAL);
+		assert( i->kind == TOKEN_ROUTINE || i->kind == TOKEN_REGISTER || i->kind == TOKEN_ARGUMENT || i->kind == TOKEN_CALL || i->kind == TOKEN_JUMP || i->kind == TOKEN_CONDITIONAL);
 		assert( i->child_count > 0 );
 		if(( i->kind == TOKEN_ARGUMENT || i->kind == TOKEN_REGISTER ) && i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
 			compiler_error( *token, "Name collision with register." );
 		}
-		i += i->child_count;
+		if( i->kind == TOKEN_ROUTINE ){
+			i += 1;
+		} else {
+			i += i->child_count + 1;
+		}
+	}
+}
+
+void validate_expression( syntax_token procedure_token, syntax_token* type_token, syntax_token* token );
+
+void validate_call( syntax_token procedure_token, syntax_token* type_token, syntax_token* token ){
+	assert( procedure_token.kind == TOKEN_PROCEDURE );
+	assert( token > &statement[ procedure_token.child_index ]);
+	assert( token < &statement[ procedure_token.child_index + procedure_token.child_count ]);
+	assert( type_token == NULL || type_token->kind == TOKEN_TYPE || type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS );
+	syntax_token* called_token = &procedure[ 0 ];
+	while( 1 ){
+		assert( called_token < &procedure[ procedure_count ]);
+		if( called_token->bytes == token->bytes && memcmp( &file_buffer[ called_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+			break;
+		}
+		called_token++;
+		assert( called_token <= &procedure[ procedure_count ]);
+		if( called_token == &procedure[ procedure_count ]){
+			compiler_error( *token, "Could not find procedure_token name." );
+		}
+	}
+	if( called_token->flags & FLAG_INTRENSIC ){
+		if(( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "add", 3 ) == 0 ) ||
+		   ( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "sub", 3 ) == 0 ) ||
+		   ( called_token->bytes == 9 && memcmp( &file_buffer[ called_token->raw_index ], "cmp_equal", 9 ) == 0 )){
+			token++;
+			validate_expression( procedure_token, type_token, token );
+			token += token->child_count + 1;
+			validate_expression( procedure_token, type_token, token );
+			token += token->child_count + 1;
+		} else {
+			assert( 0 );
+		}
+	} else {
+		syntax_token* signature_token = &statement[ called_token->child_index ];
+		if( type_token == NULL ){
+			if( signature_token->kind != TOKEN_ROUTINE ){
+				compiler_error( *token, "Call assignment type and procedure return type do not match." );
+			}
+		} else {
+			while( signature_token->kind == TOKEN_ARRAY || signature_token->kind == TOKEN_ADDRESS ){
+				if( signature_token->kind == TOKEN_ARRAY && type_token->kind != TOKEN_ARRAY ){
+					compiler_error( *token, "Call assignment type and procedure return type do not match." );
+				}
+				if( signature_token->kind == TOKEN_ADDRESS && type_token->kind != TOKEN_ADDRESS ){
+					compiler_error( *token, "Call assignment type and procedure return type do not match." );
+				}
+				signature_token++;
+				type_token++;
+			}
+			assert( type_token->kind == TOKEN_TYPE );
+			if( signature_token->bytes != type_token->bytes || memcmp( &file_buffer[ signature_token->raw_index ], &file_buffer[ type_token->raw_index ], type_token->bytes ) != 0 ){
+				compiler_error( *token, "Call assignment type and procedure return type do not match." );
+			}
+		}
+		token++; /* token is currently on the call name, need to move to the first argument. */
+		signature_token++;
+		signature_token++;
+		while( signature_token->kind == TOKEN_ARGUMENT ){
+			signature_token++;
+			assert( signature_token->kind == TOKEN_TYPE || signature_token->kind == TOKEN_ARRAY || signature_token->kind == TOKEN_ADDRESS );
+			validate_expression( procedure_token, signature_token, token );
+			signature_token += signature_token->child_count + 1;
+			token += token->child_count + 1;
+		}
 	}
 }
 
@@ -751,91 +942,205 @@ void validate_expression( syntax_token procedure_token, syntax_token* type_token
 	assert( procedure_token.kind == TOKEN_PROCEDURE );
 	assert( token > &statement[ procedure_token.child_index ]);
 	assert( token < &statement[ procedure_token.child_index + procedure_token.child_count ]);
-	if( type_token != NULL ){
-		assert( type_token->kind == TOKEN_TYPE );
-	}
+	assert( type_token != NULL );
+	assert( type_token->kind == TOKEN_TYPE || type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS );
 	if( token->kind == TOKEN_NUMBER ){
-		return;
-	} else if( token->kind == TOKEN_STRING ){
-		return;
-	} else if( token->kind == TOKEN_REGISTER ){
-		syntax_token* register_def = &statement[ procedure_token.child_index ];
-		while( register_def->kind == TOKEN_TYPE ){
-			register_def++;
-		}
-		assert( register_def->kind == TOKEN_ROUTINE );
-		register_def++;
-		while( 1 ){
-			assert( register_def < &statement[ procedure_token.child_index + procedure_token.child_count ]);
-			if( register_def->kind == TOKEN_ROUTINE ){
-				assert( 0 );
-			} else if( register_def->kind == TOKEN_REGISTER || register_def->kind == TOKEN_ARGUMENT ){
-				if( register_def->bytes == token->bytes && memcmp( &file_buffer[ register_def->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
-					break;
+		number_literal number = token_to_number_literal( *token );
+		if( type_token->bytes == 3 && memcmp( &file_buffer[ type_token->raw_index ], "i32", 3 ) == 0 ){
+			if( number.kind == NUMBER_FLOAT || number.kind == NUMBER_NEGITIVE_FLOAT ){
+				if( number.fraction != 0 ){
+					compiler_error( *token, "Type of assignment is not float." );
 				}
-			} else if( register_def->kind == TOKEN_CALL ){
-				assert( 0 );
-			} else if( register_def->kind == TOKEN_JUMP || register_def->kind == TOKEN_RETURN ){
-				assert( 0 );
-			} else if( register_def->kind == TOKEN_CONDITIONAL ){
-				assert( 0 );
+			}
+			if( number.kind == NUMBER_NEGITIVE_INTEGER || number.kind == NUMBER_NEGITIVE_FLOAT ){
+				if( number.integer > 2147483648 ){
+					compiler_error( *token, "Value is outside of type range." );
+				}
 			} else {
-				assert( 0 );
+				if( number.integer >= 4294967296 ){
+					compiler_error( *token, "Value is outside of type range." );
+				}
 			}
-			register_def++;
-			assert( register_def <= &statement[ procedure_token.child_index + procedure_token.child_count ]);
-			if( register_def == &statement[ procedure_token.child_index + procedure_token.child_count ]){
-				compiler_error( *token, "Could not find statement name." );
+		} else if( type_token->bytes == 2 && memcmp( &file_buffer[ type_token->raw_index ], "i8", 2 ) == 0 ){
+			if( number.kind == NUMBER_FLOAT || number.kind == NUMBER_NEGITIVE_FLOAT ){
+				if( number.fraction != 0 ){
+					compiler_error( *token, "Type of assignment is not float." );
+				}
 			}
+			if( number.kind == NUMBER_NEGITIVE_INTEGER || number.kind == NUMBER_NEGITIVE_FLOAT ){
+				if( number.integer > 128 ){
+					compiler_error( *token, "Value is outside of type range." );
+				}
+			} else {
+				if( number.integer >= 256 ){
+					compiler_error( *token, "Value is outside of type range." );
+				}
+			}
+		} else {
+			compiler_error( *token, "Invalid type for a number." );
 		}
-		
+	} else if( token->kind == TOKEN_STRING ){
+		if( type_token->kind != TOKEN_ARRAY && type_token->bytes == 2 && memcmp( &file_buffer[ type_token->raw_index ], "i8", 2 ) == 0 ){
+			compiler_error( *token, "Invalid type for a string, must be []i8." );
+		}
 	} else if( token->kind == TOKEN_CALL ){
-		syntax_token* call_def = &procedure[ 0 ];
-		while( 1 ){
-			assert( call_def < &procedure[ procedure_count ]);
-			if( call_def ->bytes == token->bytes && memcmp( &file_buffer[ call_def ->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+		validate_call( procedure_token, type_token, token );
+	} else if( token->kind == TOKEN_USE || token->kind == TOKEN_INDEX || token->kind == TOKEN_COMPOSITE ){
+		assert( file_buffer[ token->raw_index ] != '[' );
+/* check match in procedure arguments */
+		syntax_token* use_def_token = &statement[ procedure_token.child_index ];
+		while( use_def_token->kind == TOKEN_TYPE || use_def_token->kind == TOKEN_ARRAY || use_def_token->kind == TOKEN_ADDRESS ){
+			use_def_token += use_def_token->child_count + 1;
+		}
+		assert( use_def_token->kind == TOKEN_ROUTINE );
+		syntax_token* use_def_token_save = use_def_token;
+		use_def_token++;
+		while( use_def_token->kind == TOKEN_ARGUMENT ){
+			if( use_def_token->bytes == token->bytes && memcmp( &file_buffer[ use_def_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+				goto found_use_def;
+			}
+			use_def_token += use_def_token->child_count + 1;
+		}
+		use_def_token = use_def_token_save;
+/* check match in routine arguments */
+		syntax_token* end_token = &statement[ procedure_token.child_index + procedure_token.child_count ];
+		assert( token > use_def_token );
+		while( use_def_token < end_token ){
+			if( token < use_def_token + use_def_token->child_count ){
+				assert( token > use_def_token );
 				break;
 			}
-			call_def++;
-			assert( call_def <= &procedure[ procedure_count ]);
-			if( call_def == &procedure[ procedure_count ]){
-				compiler_error( *token, "Could not find procedure_token name." );
-			}
+			use_def_token += use_def_token->child_count + 1;
 		}
-		if( call_def->flags & FLAG_INTRENSIC ){
-			if( call_def->bytes == 3 && memcmp( &file_buffer[ call_def->raw_index ], "add", 3 ) == 0 ){
-			} else if( call_def->bytes == 9 && memcmp( &file_buffer[ call_def->raw_index ], "cmp_equal", 9 ) == 0 ){
-			} else if( call_def->bytes == 4 && memcmp( &file_buffer[ call_def->raw_index ], "exit", 4 ) == 0 ){
-			} else if( call_def->bytes == 3 && memcmp( &file_buffer[ call_def->raw_index ], "log", 3 ) == 0 ){
-			} else {
+		assert( use_def_token->kind == TOKEN_ROUTINE );
+		use_def_token++;
+		while( use_def_token->kind == TOKEN_ARGUMENT ){
+			if( use_def_token->bytes == token->bytes && memcmp( &file_buffer[ use_def_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+				goto found_use_def;
+			}
+			use_def_token += use_def_token->child_count + 1;
+		}
+/* check for routine register definitions */
+		while( token > use_def_token + use_def_token->child_count ){
+			if( use_def_token->bytes == token->bytes && memcmp( &file_buffer[ use_def_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+				goto found_use_def;
+			}
+			use_def_token += use_def_token->child_count + 1;
+		}
+/* TODO: search globals */
+		compiler_error( *token, "Undefinded register use." );
+found_use_def:
+		use_def_token++;
+		assert( use_def_token->kind == TOKEN_TYPE || use_def_token->kind == TOKEN_ARRAY || use_def_token->kind == TOKEN_ADDRESS );
+		if( token->kind == TOKEN_USE ){
+			while( type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS ){
+				if( type_token->kind == TOKEN_ARRAY && use_def_token->kind != TOKEN_ARRAY ){
+					compiler_error( *token, "register types do not match." );
+				}
+				if( type_token->kind == TOKEN_ADDRESS && use_def_token->kind != TOKEN_ADDRESS ){
+					compiler_error( *token, "register types do not match." );
+				}
+				type_token++;
+				use_def_token++;
+			}
+			assert( use_def_token->kind == TOKEN_TYPE );
+			assert( type_token->kind == TOKEN_TYPE );
+			if( type_token->bytes != use_def_token->bytes || memcmp( &file_buffer[ type_token->raw_index ], &file_buffer[ use_def_token->raw_index ], type_token->bytes ) != 0 ){
+				compiler_error( *token, "register types do not match." );
+			}
+		} else if( token->kind == TOKEN_INDEX ){
+			if( use_def_token->kind != TOKEN_ARRAY ){
+				compiler_error( *token, "Trying to index register that is not an array." );
+			}
+			use_def_token++;
+			while( type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS ){
+				if( type_token->kind == TOKEN_ARRAY && use_def_token->kind != TOKEN_ARRAY ){
+					compiler_error( *token, "register types do not match." );
+				}
+				if( type_token->kind == TOKEN_ADDRESS && use_def_token->kind != TOKEN_ADDRESS ){
+					compiler_error( *token, "register types do not match." );
+				}
+				type_token++;
+				use_def_token++;
+			}
+			assert( use_def_token->kind == TOKEN_TYPE );
+			assert( type_token->kind == TOKEN_TYPE );
+			if( type_token->bytes != use_def_token->bytes || memcmp( &file_buffer[ type_token->raw_index ], &file_buffer[ use_def_token->raw_index ], type_token->bytes ) != 0 ){
+				compiler_error( *token, "register types do not match." );
+			}
+		} else if( token->kind == TOKEN_COMPOSITE ){
+			if( use_def_token->kind == TOKEN_ARRAY ){
+				token++;
+				if( token->bytes == 5 && memcmp( &file_buffer[ token->raw_index ], "count", 5 ) == 0 ){
+					if( type_token->bytes != 3 || memcmp( &file_buffer[ type_token->raw_index ], "i32", 3 ) != 0 ){
+						compiler_error( *token, "Array count is type i32." );
+					}
+				} else if( token->bytes == 8 && memcmp( &file_buffer[ token->raw_index ], "capacity", 8 ) == 0 ){
+					if( type_token->bytes != 3 || memcmp( &file_buffer[ type_token->raw_index ], "i32", 3 ) != 0 ){
+						compiler_error( *token, "Array capacity is type i32." );
+					}
+				} else {
+					compiler_error( *token, "Array does not have this memeber." );
+				}
+			} else if( use_def_token->kind == TOKEN_TYPE ){
 				assert( 0 );
 			}
 		} else {
-/* TODO: argument checking of procedure_tokens */  assert( 0 );
-/*
-			call_def = &call_def[ call_def->child_index ];
-			if( type_token == NULL ){
-				if( call_def->kind != TOKEN_ROUTINE ){
-					compiler_error( *token, "Expected called procedure_token to have no return value." );
-				}
-			} else {
-				if( call_def->bytes != type_token->bytes || memcmp( &file_buffer[ call_def->raw_index ], &file_buffer[ type_token->bytes ], call_def->bytes ) != 0 ){
-					compiler_error( *token, "Procedure type_token and use do not match." );
-				}
-			}
-			call_def++;
-			assert( call_def->kind == TOKEN_ROUTINE );
-			call_def++;
-*/
+			assert( 0 );
 		}
 	} else {
-		compiler_error( *token, "Invlaid expression value." );
+		print_tokens();
+		compiler_error( *token, "Invalid expression value" );
+	}
+}
+
+void validate_jump( syntax_token procedure_token, syntax_token* token ){
+	assert( procedure_token.kind == TOKEN_PROCEDURE );
+	assert( token > &statement[ procedure_token.child_index ]);
+	assert( token < &statement[ procedure_token.child_index + procedure_token.child_count ]);
+	if( token->bytes == 6 && memcmp( &file_buffer[ token->raw_index ], "return", 6 ) == 0 ){
+		syntax_token* return_type_token = &statement[ procedure_token.child_index ];
+		token++;
+		while( return_type_token->kind == TOKEN_TYPE || return_type_token->kind == TOKEN_ARRAY || return_type_token->kind == TOKEN_ADDRESS ){
+			validate_expression( procedure_token, return_type_token, token );
+			return_type_token += return_type_token->child_count + 1;
+			token += token->child_count + 1;
+		}
+	} else {
+		syntax_token* routine_token = &statement[ procedure_token.child_index ];
+		while( routine_token->kind == TOKEN_TYPE || routine_token->kind == TOKEN_ARRAY || routine_token->kind == TOKEN_ADDRESS ){
+			routine_token += routine_token->child_count + 1;
+		}
+		assert( routine_token->kind == TOKEN_ROUTINE );
+		while( routine_token < &statement[ procedure_token.child_index + procedure_token.child_count ]){
+			assert( routine_token->kind == TOKEN_ROUTINE );
+			assert( routine_token->child_count > 0 );
+			if( routine_token->bytes == token->bytes && memcmp( &file_buffer[ routine_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+				routine_token++;
+				token++;
+				while( routine_token->kind == TOKEN_ARGUMENT ){
+					routine_token++;
+					assert( routine_token->kind == TOKEN_TYPE || routine_token->kind == TOKEN_ARRAY || routine_token->kind == TOKEN_ADDRESS );
+					validate_expression( procedure_token, routine_token, token );
+					routine_token += routine_token->child_count + 1;
+					token += token->child_count + 1;
+				}
+				break;
+			}
+			routine_token += routine_token->child_count + 1;
+		}
 	}
 }
 
 void validate_procedure( i32 procedure_index ){
 	assert( procedure_index >= 0 );
 	assert( procedure_index < procedure_count );
+	if( procedure[ procedure_index ].flags & FLAG_INTRENSIC ){
+		return;
+	}
+	if( procedure[ procedure_index ].flags & FLAG_EXTERNAL ){
+		return;
+	}
 	{ /* exclusive procedure */
 		syntax_token token = procedure[ procedure_index ];
 		syntax_token* i = procedure;
@@ -851,48 +1156,60 @@ void validate_procedure( i32 procedure_index ){
 		validate_is_type( token );
 		token += token->child_count + 1;
 	}
-	while( token < &procedure[ procedure[ procedure_index ].child_count + procedure[ procedure_index ].child_index ]){
-		if( token->kind == TOKEN_ROUTINE ){
-			validate_is_not_type( token );
-			{ /* exclusive routine */
-				syntax_token* i = &statement[ procedure[ procedure_index ].child_index ];
-				while( token->kind == TOKEN_TYPE || token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
-					i++;
-				}
-				assert( i->kind == TOKEN_ROUTINE );
-				while( i < token ){
-					assert( i->kind == TOKEN_ROUTINE );
-					assert( i->child_count > 0 );
-					if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
-						compiler_error( *token, "Routine name collision." );
-					}
-					i += i->child_count;
-				}
+	syntax_token* procedure_start = token;
+	syntax_token* end_token = &statement[ procedure[ procedure_index ].child_count + procedure[ procedure_index ].child_index ];
+	while( token < end_token ){
+		assert( token->kind == TOKEN_ROUTINE );
+		validate_is_not_type( token );
+/* validate exclusive routine */
+		syntax_token* routine_token = procedure_start;
+		assert( routine_token->kind == TOKEN_ROUTINE );
+		while( routine_token < token ){
+			assert( routine_token->kind == TOKEN_ROUTINE );
+			assert( routine_token->child_count > 0 );
+			if( routine_token->bytes == token->bytes && memcmp( &file_buffer[ routine_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+				compiler_error( *token, "Routine name collision." );
 			}
+			routine_token += routine_token->child_count + 1;
+		}
+		token++;
+/* validate routine arguments */
+		while( token->kind == TOKEN_ARGUMENT ){
+			validate_exclusive_register( procedure[ procedure_index ], token );
 			token++;
-			while( token->kind == TOKEN_ARGUMENT ){
+			validate_is_type( token );
+			token += token->child_count + 1;
+		}
+/* validate routine body */
+		while( token->kind == TOKEN_REGISTER || token->kind == TOKEN_CALL ){
+			if( token->kind == TOKEN_REGISTER ){
+				syntax_token* type_token = token + 1;
 				validate_exclusive_register( procedure[ procedure_index ], token );
 				token++;
 				validate_is_type( token );
 				token += token->child_count + 1;
+				validate_expression( procedure[ procedure_index ], type_token, token );
+				token += token->child_count + 1;
+			} else if( token->kind == TOKEN_CALL ){
+				validate_call( procedure[ procedure_index ], NULL, token );
+				token += token->child_count + 1;
 			}
-		} else if( token->kind == TOKEN_REGISTER ){
-			validate_exclusive_register( procedure[ procedure_index ], token );
-			token++;
-			validate_is_type( token );
-			validate_expression( procedure[ procedure_index ], token, token + token->child_count + 1 );
+		}
+/* validate routine end */
+		if( token->kind == TOKEN_JUMP ){
+			validate_jump( procedure[ procedure_index ], token + 1 );
 			token += token->child_count + 1;
-		} else if( token->kind == TOKEN_CALL ){
-			validate_expression( procedure[ procedure_index ], NULL, token );
-			token += token->child_count + 1;
-		} else if( token->kind == TOKEN_JUMP ){
-			assert( 0 );
 		} else if( token->kind == TOKEN_CONDITIONAL ){
-			assert( 0 );
+			token++;
+			validate_expression( procedure[ procedure_index ], &type[ 0 ], token );
+			token += token->child_count + 1;
+			validate_jump( procedure[ procedure_index ], token );
+			token += token->child_count + 1;
+			validate_jump( procedure[ procedure_index ], token );
+			token += token->child_count + 1;
 		} else {
 			assert( 0 );
 		}
-		token += token->child_count;
 	}
 }
 
@@ -910,7 +1227,7 @@ void validate_global_register( i32 global_register_index ){
 		if( i->bytes == token.bytes && memcmp( &file_buffer[ token.raw_index ], &file_buffer[ i->raw_index ], token.bytes ) == 0 ){
 			compiler_error( token, "Two global registers have the same name." );
 		}
-		i += i->child_count + 1;
+		i++;
 	}
 	validate_is_not_procedure( &global_register[ global_register_index ]);
 */
@@ -927,7 +1244,7 @@ void validate_type( i32 type_index ){
 		if( i->bytes == token->bytes && memcmp( &file_buffer[ token->raw_index ], &file_buffer[ i->raw_index ], token->bytes ) == 0 ){
 			compiler_error( *token, "Two types have the same name." );
 		}
-		i += i->child_count + 1;
+		i++;
 	}
 	validate_is_not_procedure( token );
 	validate_is_not_global_register( token );
@@ -958,6 +1275,10 @@ syntax_token* output_llvmir_value( syntax_token* token ){
 		token++;
 		buffer_append( (char*) scratch, &scratch_count, ".", 1 );
 		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else if( token->kind == TOKEN_STRING ){
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else if( token->kind == TOKEN_ARRAY ){
+		assert( 0 && "array" );
 	} else {
 		assert( 0 );
 	}
@@ -965,203 +1286,153 @@ syntax_token* output_llvmir_value( syntax_token* token ){
 	return token;
 }
 
+void output_llvmir_type( syntax_token* token ){
+	assert( token != NULL );
+	if( token->kind == TOKEN_TYPE ){
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+	} else if( token->kind == TOKEN_ADDRESS ){
+		buffer_append( (char*) scratch, &scratch_count, "ptr", 3 );
+	} else if( token->kind == TOKEN_ARRAY ){
+		buffer_append( (char*) scratch, &scratch_count, "i32, i32, ptr", 13 );
+	}
+}
+
 void output_llvmir_procedure( i32 procedure_index ){
 	assert( procedure_index >= 0 );
 	syntax_token* procedure_token = &procedure[ procedure_index ];
-	assert( !( procedure_token->flags & FLAG_INTRENSIC ));
-	assert( procedure_token->bytes == 5 && memcmp( &file_buffer[ procedure_token->raw_index ], "start", 5 ) == 0 );
 	assert( scratch_count == 0 );
-	i32 return_type_index = 7;
-	buffer_append( (char*) scratch, &scratch_count, "define  @start( ", 16 );
-	syntax_token* token = &statement[ procedure_token->child_index ];
-	syntax_token* return_type_token = token;
-	token++;
-	assert( return_type_token->kind == TOKEN_TYPE );
-	buffer_insert( (char*) scratch, &scratch_count, return_type_index, &file_buffer[ return_type_token->raw_index ], return_type_token->bytes );
-	assert( token->kind == TOKEN_ROUTINE );
-	token++;
-	while( token->kind == TOKEN_ARGUMENT ){
-		assert( token->bytes == 8 && memcmp( &file_buffer[ token->raw_index ], "argument", 8 ) == 0 );
-		token++;
-		assert( token->kind == TOKEN_ARRAY );
-		token++;
-		assert( token->kind == TOKEN_ARRAY );
-		token++;
-		assert( token->kind == TOKEN_TYPE );
-		assert( token->bytes == 2 && memcmp( &file_buffer[ token->raw_index ], "i8", 2 ) == 0 );
-		buffer_append( (char*) scratch, &scratch_count, "i32 %argument.count, i32 %argument.capacity, ptr %argument.data", 63 ); 
-		token++;
-	}
-	buffer_append( (char*) scratch, &scratch_count, " ){\n", 4 );
-	while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
-		if( token->kind == TOKEN_RETURN ){
-			buffer_append( (char*) scratch, &scratch_count, "\tret ", 5 );
-			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ return_type_token->raw_index ], return_type_token->bytes );
-			token++;
-			buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-			token = output_llvmir_value( token );
-			buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
-		} else if( token->kind == TOKEN_CALL ){
-			buffer_append( (char*) scratch, &scratch_count, "\tcall void @", 12 );
-			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			token++;
-			buffer_append( (char*) scratch, &scratch_count, "( ", 2 );
-			if( token->kind == TOKEN_NUMBER ){
-				buffer_append( (char*) scratch, &scratch_count, "i32 ", 5 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			} else {
-				assert( 0 );
-			}
-			buffer_append( (char*) scratch, &scratch_count, " )\n", 3 );
-			token++;
-		} else if( token->kind == TOKEN_REGISTER ){
-			buffer_append( (char*) scratch, &scratch_count, "\t%", 2 );
-			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-			token++;
-			token++;
-			if( token->kind == TOKEN_NUMBER ){
-				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
-				buffer_append( (char*) scratch, &scratch_count, " 0, ", 4 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				token++;
-			} else if( token->kind == TOKEN_USE ){
-				buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
-				buffer_append( (char*) scratch, &scratch_count, " 0, %", 5 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				token++;
-			} else if( token->kind == TOKEN_CALL ){
-				buffer_append( (char*) scratch, &scratch_count, " = ", 3 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
-				buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
-				token++;
-				buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-				token = output_llvmir_value( token );
-				buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
-				token = output_llvmir_value( token );
-			} else {
-				assert( 0 );
-			}
-			buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
+	assert( !( procedure_token->flags & FLAG_INTRENSIC ));
+	if( procedure_token->flags & FLAG_EXTERNAL ){
+		buffer_append( (char*) scratch, &scratch_count, "declare ", 8 );
+		syntax_token* token = &statement[ procedure_token->child_index ];
+		if( token->kind == TOKEN_ROUTINE ){
+			buffer_append( (char*) scratch, &scratch_count, "void @", 6 );
 		} else {
-			assert( 0 );
+			buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+			token++;
+			buffer_append( (char*) scratch, &scratch_count, " @", 2 );
 		}
-	}
-	buffer_append( (char*) scratch, &scratch_count, "}\n", 2 );
-	push_output();
-}
-
-/*
-void output_llvmir_procedure( syntax_token* procedure ){
-	assert( procedure != NULL );
-	assert( procedure->bytes > 0 );
-	assert( procedure->child_count > 0 );
-	assert( procedure->kind == TOKEN_PROCEDURE );
-	while( 1 ){
-		assert( procedure->bytes == 5 && strncmp( procedure->raw, "start", 5 ) == 0 );
-		i32 return_type_index = scratch_count + 7;
-		buffer_append( (char*) scratch, &scratch_count, "define  @start( ", 16 );
-		syntax_token* return_type_token = procedure + 1;
-		assert( return_type_token->kind == TOKEN_TYPE );
-		buffer_insert( (char*) scratch, &scratch_count, return_type_index, return_type_token->raw, return_type_token->bytes );
-		syntax_token* token = return_type_token + 1;
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ procedure_token->raw_index ], procedure_token->bytes );
+		buffer_append( (char*) scratch, &scratch_count, "( ", 2 );
 		assert( token->kind == TOKEN_ROUTINE );
 		token++;
-		if( token->kind == TOKEN_ARGUMENT ){
+		while( token->kind == TOKEN_ARGUMENT ){
 			token++;
-			assert( token->kind == TOKEN_TYPE );
-			buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-			buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-			buffer_append( (char*) scratch, &scratch_count, token[ -1 ].raw, token[ -1 ].bytes );
+			output_llvmir_type( token );
+			token += token->child_count + 1;
+		}
+		buffer_append( (char*) scratch, &scratch_count, " )\n\n", 4 );
+	} else {
+		buffer_append( (char*) scratch, &scratch_count, "define ", 7 );
+		i32 return_type_index = scratch_count;
+		syntax_token* token = &statement[ procedure_token->child_index ];
+		output_llvmir_type( token );
+		buffer_append( (char*) scratch, &scratch_count, " @", 2 );
+		buffer_append( (char*) scratch, &scratch_count, &file_buffer[ procedure_token->raw_index ], procedure_token->bytes );
+		buffer_append( (char*) scratch, &scratch_count, "( ", 2 );
+		token += token->child_count + 1;
+		assert( token->kind == TOKEN_ROUTINE );
+		token++;
+		while( token->kind == TOKEN_ARGUMENT ){
+			if( ( token - 1 )->kind == TOKEN_ARGUMENT ){
+				buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
+			}
+			syntax_token* argument_token = token;
 			token++;
+			if( token->kind == TOKEN_TYPE ){
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+				buffer_append( (char*) scratch, &scratch_count, " %", 2 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ argument_token->raw_index ], argument_token->bytes );
+			} else if( token->kind == TOKEN_ADDRESS ){
+				buffer_append( (char*) scratch, &scratch_count, "ptr %", 5 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ argument_token->raw_index ], argument_token->bytes );
+			} else if( token->kind == TOKEN_ARRAY ){
+				buffer_append( (char*) scratch, &scratch_count, "i32 %", 5 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ argument_token->raw_index ], argument_token->bytes );
+				buffer_append( (char*) scratch, &scratch_count, ".count, i32 %", 13 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ argument_token->raw_index ], argument_token->bytes );
+				buffer_append( (char*) scratch, &scratch_count, ".capacity, i32 %", 16 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ argument_token->raw_index ], argument_token->bytes );
+				buffer_append( (char*) scratch, &scratch_count, ".data", 5 );
+			}
+			while( token->kind == TOKEN_TYPE || token->kind == TOKEN_ADDRESS || token->kind == TOKEN_ARRAY ){
+				token++;
+			}
 		}
 		buffer_append( (char*) scratch, &scratch_count, " ){\n", 4 );
-		while( 1 ){
-			if( token->kind == TOKEN_REGISTER ){
-				buffer_append( (char*) scratch, &scratch_count, "\t%", 2 );
-				buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-				token = token + 1;
-				assert( token->kind == TOKEN_TYPE );
-				token = token + 1;
-				if( token->kind == TOKEN_NUMBER ){
-					buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
-					buffer_append( (char*) scratch, &scratch_count, token[ -1 ].raw, token[ -1 ].bytes );
-					buffer_append( (char*) scratch, &scratch_count, " 0, ", 4 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-				} else if( token->kind == TOKEN_REGISTER ){
-					buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
-					buffer_append( (char*) scratch, &scratch_count, token[ -1 ].raw, token[ -1 ].bytes );
-					buffer_append( (char*) scratch, &scratch_count, " 0, %", 5 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-				} else if( token->kind == TOKEN_ADD ){
-					buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
-					buffer_append( (char*) scratch, &scratch_count, token[ -1 ].raw, token[ -1 ].bytes );
-					token = token + 1;
-					if( token->kind == TOKEN_NUMBER ){
-						buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-						buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-					} else if( token->kind == TOKEN_REGISTER ){
-						buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-						buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-					} else {
-						assert( 0 );
-					}
-					token = token + 1;
-					if( token->kind == TOKEN_NUMBER ){
-						buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
-						buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-					} else if( token->kind == TOKEN_REGISTER ){
-						buffer_append( (char*) scratch, &scratch_count, ", %", 3 );
-						buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-					} else {
-						assert( 0 );
-					}
-				} else {
-					assert( 0 );
-				}
-				buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
-			} else if( token->kind == TOKEN_RETURN ){
-				buffer_append( (char*) scratch, &scratch_count, "\tret ", 5 );
-				buffer_append( (char*) scratch, &scratch_count, return_type_token->raw, return_type_token->bytes );
-				token = token + 1;
-				if( token->kind == TOKEN_NUMBER ){
+		assert( token < &statement[ procedure_token->child_index + procedure_token->child_count ]);
+		while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
+			if( token->kind == TOKEN_JUMP ){
+				if( token->bytes == 6 && memcmp( &file_buffer[ token->raw_index ], "return", 6 ) == 0 ){
+					buffer_append( (char*) scratch, &scratch_count, "\tret ", 5 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
+					token++;
 					buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-				} else if( token->kind == TOKEN_REGISTER ){
-					buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
+					token = output_llvmir_value( token );
+					buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
 				} else {
 					assert( 0 );
 				}
-				buffer_append( (char*) scratch, &scratch_count, "\n}\n", 3 );
-				break;
 			} else if( token->kind == TOKEN_CALL ){
-				assert( token->bytes == 4 && strncmp( token->raw, "exit", token->bytes ) == 0 );
-				buffer_append( (char*) scratch, &scratch_count, "\tcall void @exit( i32", 21 );
+				buffer_append( (char*) scratch, &scratch_count, "\tcall void @", 12 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
 				token++;
+				buffer_append( (char*) scratch, &scratch_count, "( ", 2 );
 				if( token->kind == TOKEN_NUMBER ){
-					buffer_append( (char*) scratch, &scratch_count, " ", 1 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
-				} else if( token->kind == TOKEN_REGISTER ){
-					buffer_append( (char*) scratch, &scratch_count, " %", 2 );
-					buffer_append( (char*) scratch, &scratch_count, token->raw, token->bytes );
+					buffer_append( (char*) scratch, &scratch_count, "i32 ", 5 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
 				} else {
 					assert( 0 );
 				}
 				buffer_append( (char*) scratch, &scratch_count, " )\n", 3 );
+				token++;
+			} else if( token->kind == TOKEN_REGISTER ){
+				buffer_append( (char*) scratch, &scratch_count, "\t%", 2 );
+				buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+				token++;
+				while( token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
+					token++;
+				}
+				token++;
+				if( token->kind == TOKEN_NUMBER ){
+					buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
+					buffer_append( (char*) scratch, &scratch_count, " 0, ", 4 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+					token++;
+				} else if( token->kind == TOKEN_USE ){
+					buffer_append( (char*) scratch, &scratch_count, " = add ", 7 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
+					buffer_append( (char*) scratch, &scratch_count, " 0, %", 5 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+					token++;
+				} else if( token->kind == TOKEN_CALL ){
+					buffer_append( (char*) scratch, &scratch_count, " = call ", 8 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token[ -1 ].raw_index ], token[ -1 ].bytes );
+					buffer_append( (char*) scratch, &scratch_count, " @", 2 );
+					buffer_append( (char*) scratch, &scratch_count, &file_buffer[ token->raw_index ], token->bytes );
+					token++;
+					buffer_append( (char*) scratch, &scratch_count, " ", 1 );
+					token = output_llvmir_value( token );
+					while( token->kind == TOKEN_NUMBER || token->kind == TOKEN_USE || token->kind == TOKEN_CALL || token->kind == TOKEN_STRING ){
+						buffer_append( (char*) scratch, &scratch_count, ", ", 2 );
+						token = output_llvmir_value( token );
+					}
+				} else if( token->kind == TOKEN_STRING ){
+					token++;
+					assert( 0 );
+				} else {
+					assert( 0 );
+				}
+				buffer_append( (char*) scratch, &scratch_count, "\n", 1 );
 			} else {
 				assert( 0 );
 			}
-			token++;
 		}
-		push_output();
-		break;
+		buffer_append( (char*) scratch, &scratch_count, "}\n\n", 3 );
 	}
-	procedures_finished_outputing++;
+	push_output();
 }
-*/
 
 void output_procedure( i32 index ){
 	assert( index >= 0 );
@@ -1183,6 +1454,13 @@ void output_type( i32 index ){
 	assert( type[ index ].flags & FLAG_INTRENSIC );
 	return;
 }
+
+void thread_sync(){
+#ifndef SINGLE_THREAD
+	pthread_barrier_wait( &thread_sync_barrier );
+#endif
+}
+
 
 void* thread_main( void* argt ){
 	i64 thread_index = (i64) argt;
@@ -1242,9 +1520,7 @@ void* thread_main( void* argt ){
 			validate_procedure( index );
 		}
 	}
-#ifndef SINGLE_THREAD
-	pthread_barrier_wait( &thread_sync );
-#endif
+	thread_sync();
 	{
 		while( 1 ){
 			i32 index = __atomic_fetch_add( &types_started_outputing, 1, __ATOMIC_ACQ_REL );
@@ -1268,12 +1544,9 @@ void* thread_main( void* argt ){
 			output_procedure( index );
 		}
 	}
-#ifndef SINGLE_THREAD
-	pthread_barrier_wait( &thread_sync );
-#endif
+	thread_sync();
 	if( thread_index == 0 ){
-		char* target = "target triple = \"x86_64-unknown-linux-gnu\"\n\n"
-		               "declare void @exit( i32 )\n\n";
+		char* target = "target triple = \"x86_64-unknown-linux-gnu\"\n\n";
 		buffer_insert( output_buffer, &output_buffer_count, 0, target, strlen( target ));
 		char output_name[ 260 ] = { 0 };
 		memcpy( output_name, file[ 0 ].name, file[ 0 ].name_bytes );
@@ -1339,19 +1612,81 @@ i32 main( i32 argc, char* argv[] ){
 		procedure[ procedure_count ].raw_index = file_buffer_count;
 		procedure[ procedure_count ].bytes = 4;
 		buffer_append( file_buffer, &file_buffer_count, "exit", procedure[ procedure_count ].bytes );
-		procedure[ procedure_count ].child_index = -1;
-		procedure[ procedure_count ].child_count = 0;
+		procedure[ procedure_count ].child_index = statement_count;
+		procedure[ procedure_count ].child_count = 3;
 		procedure[ procedure_count ].kind = TOKEN_PROCEDURE;
-		procedure[ procedure_count ].flags = FLAG_INTRENSIC;
+		procedure[ procedure_count ].flags = FLAG_EXTERNAL;
 		procedure_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 9;
+			buffer_append( file_buffer, &file_buffer_count, "procedure", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 2;
+			statement[ statement_count ].kind = TOKEN_ROUTINE;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 0;
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 1;
+			statement[ statement_count ].kind = TOKEN_ARGUMENT;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 3;
+			buffer_append( file_buffer, &file_buffer_count, "i32", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 0;
+			statement[ statement_count ].kind = TOKEN_TYPE;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
 		procedure[ procedure_count ].raw_index = file_buffer_count;
 		procedure[ procedure_count ].bytes = 3;
 		buffer_append( file_buffer, &file_buffer_count, "log", procedure[ procedure_count ].bytes );
-		procedure[ procedure_count ].child_index = -1;
-		procedure[ procedure_count ].child_count = 0;
+		procedure[ procedure_count ].child_index = statement_count;
+		procedure[ procedure_count ].child_count = 5;
 		procedure[ procedure_count ].kind = TOKEN_PROCEDURE;
-		procedure[ procedure_count ].flags = FLAG_INTRENSIC;
+		procedure[ procedure_count ].flags = FLAG_EXTERNAL;
 		procedure_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 3;
+			buffer_append( file_buffer, &file_buffer_count, "i32", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 0;
+			statement[ statement_count ].kind = TOKEN_TYPE;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 9;
+			buffer_append( file_buffer, &file_buffer_count, "procedure", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 3;
+			statement[ statement_count ].kind = TOKEN_ROUTINE;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 0;
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 2;
+			statement[ statement_count ].kind = TOKEN_ARGUMENT;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 1;
+			buffer_append( file_buffer, &file_buffer_count, "[", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 1;
+			statement[ statement_count ].kind = TOKEN_ARRAY;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
+			statement[ statement_count ].raw_index = file_buffer_count;
+			statement[ statement_count ].bytes = 2;
+			buffer_append( file_buffer, &file_buffer_count, "i8", statement[ statement_count ].bytes );
+			statement[ statement_count ].child_index = 0;
+			statement[ statement_count ].child_count = 0;
+			statement[ statement_count ].kind = TOKEN_TYPE;
+			statement[ statement_count ].flags = 0;
+			statement_count++;
 	}
 	i32 name_bytes = strlen( argv[ 1 ]);
 	file_add( argv[ 1 ], name_bytes );
@@ -1360,7 +1695,7 @@ i32 main( i32 argc, char* argv[] ){
 #else /* default: use multiple threads */
 	i64 cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
 	assert( cpu_count > 0 );
-	pthread_barrier_init( &thread_sync, NULL, cpu_count );
+	pthread_barrier_init( &thread_sync_barrier, NULL, cpu_count );
 	pthread_t thread_array[ cpu_count - 1 ];
 	i64 i = 0;
 	while( i < cpu_count - 1 ){

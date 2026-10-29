@@ -3,4 +3,4 @@ start procedure i32 : argument [][]i8:
 		r2 i32 = (add 10 r1)
 		r3 i32 = (add r1 r2)
 		r4 i32 = (add (add r1 1) (add r3 r1))
-		!return (add r4 0);
+		!(return (add r4 0))

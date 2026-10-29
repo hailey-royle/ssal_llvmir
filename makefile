@@ -5,7 +5,7 @@ build:
 	clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -O3
 
 debug:
-	clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -Og -ggdb
+	clang ssal_llvmir.c -o ssal_llvmir -Wall -Wextra -std=c89 -ggdb
 
 test: debug
 ifdef t

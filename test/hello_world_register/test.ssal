@@ -1,4 +1,4 @@
 start procedure i32 : argument [][]i8:
 	message []i8 = "Hello World!\x0a"
-	log_error i8 = (log message)
+	log_error i32 = (log message)
 	!(return 0)
