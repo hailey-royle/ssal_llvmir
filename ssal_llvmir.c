@@ -1006,7 +1006,7 @@ void validate_expression( syntax_token procedure_token, syntax_token* type_token
 		syntax_token* end_token = &statement[ procedure_token.child_index + procedure_token.child_count ];
 		assert( token > use_def_token );
 		while( use_def_token < end_token ){
-			if( token < use_def_token + use_def_token->child_count ){
+			if( token <= use_def_token + use_def_token->child_count ){
 				assert( token > use_def_token );
 				break;
 			}
@@ -1096,6 +1096,8 @@ found_use_def:
 
 void validate_jump( syntax_token procedure_token, syntax_token* token ){
 	assert( procedure_token.kind == TOKEN_PROCEDURE );
+	assert( token != NULL );
+	assert( token->kind == TOKEN_JUMP );
 	assert( token > &statement[ procedure_token.child_index ]);
 	assert( token < &statement[ procedure_token.child_index + procedure_token.child_count ]);
 	if( token->bytes == 6 && memcmp( &file_buffer[ token->raw_index ], "return", 6 ) == 0 ){
@@ -1112,6 +1114,7 @@ void validate_jump( syntax_token procedure_token, syntax_token* token ){
 			routine_token += routine_token->child_count + 1;
 		}
 		assert( routine_token->kind == TOKEN_ROUTINE );
+		assert( routine_token < &statement[ procedure_token.child_index + procedure_token.child_count ]);
 		while( routine_token < &statement[ procedure_token.child_index + procedure_token.child_count ]){
 			assert( routine_token->kind == TOKEN_ROUTINE );
 			assert( routine_token->child_count > 0 );
@@ -1128,6 +1131,9 @@ void validate_jump( syntax_token procedure_token, syntax_token* token ){
 				break;
 			}
 			routine_token += routine_token->child_count + 1;
+			if( routine_token >= &statement[ procedure_token.child_index + procedure_token.child_count ]){
+				compiler_error( *token, "jump point not found." );
+			}
 		}
 	}
 }
@@ -1197,7 +1203,7 @@ void validate_procedure( i32 procedure_index ){
 		}
 /* validate routine end */
 		if( token->kind == TOKEN_JUMP ){
-			validate_jump( procedure[ procedure_index ], token + 1 );
+			validate_jump( procedure[ procedure_index ], token );
 			token += token->child_count + 1;
 		} else if( token->kind == TOKEN_CONDITIONAL ){
 			token++;
