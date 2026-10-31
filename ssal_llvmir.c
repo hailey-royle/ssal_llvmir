@@ -1516,7 +1516,7 @@ void output_llvm_procedure( i32 procedure_index ){
 				output_append( &file_buffer[ argument_token->raw_index ], argument_token->bytes );
 				output_append( ".count, i32 %", 13 );
 				output_append( &file_buffer[ argument_token->raw_index ], argument_token->bytes );
-				output_append( ".capacity, i32 %", 16 );
+				output_append( ".capacity, ptr %", 16 );
 				output_append( &file_buffer[ argument_token->raw_index ], argument_token->bytes );
 				output_append( ".data", 5 );
 			}
