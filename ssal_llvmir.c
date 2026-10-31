@@ -162,6 +162,7 @@ _Thread_local u8 scratch[ MAX_SCRATCH_COUNT ];
 _Thread_local i32 scratch_count = 0;
 
 i8 found_start_procedure = 0;
+i32 llvm_output_string_count = 0;
 
 pthread_barrier_t thread_sync_barrier;
 
@@ -417,14 +418,15 @@ syntax_token next_token( source_file* file ){
 		} while( file->parse < file_max && (( *file->parse >= '0' && *file->parse <= '9' ) || *file->parse == '_' ));
 	} else if( file->parse < file_max && *file->parse == '"' ){
 		token.kind = TOKEN_STRING;
-		do {
+		token.raw_index++;
+		file->parse++;
+		while( file->parse < file_max && *file->parse != '"' ){
 			token.bytes++;
 			file->parse++;
-		} while( file->parse < file_max && *file->parse != '"' );
+		}
 		if( file->parse == file_max ){
 			compiler_error( token, "Unclosed string" );
 		}
-		token.bytes++;
 		file->parse++;
 	} else if( *file->parse == '!' ){
 		token.bytes = 1;
@@ -1362,26 +1364,75 @@ i32 output_llvm_call( syntax_token* token, syntax_token* type_token, i32 call_in
 		output_insert( &output_index, "\n", 1 );
 	} else {
 		syntax_token* call_argument = &statement[ call_def->child_index ];
-		assert( call_argument->kind == TOKEN_ROUTINE );
-		call_argument++;
-		output_insert( &output_index, "\tcall void @", 12 );
+		if( call_argument->kind == TOKEN_ROUTINE ){
+			output_insert( &output_index, "\tcall void @", 12 );
+			call_argument++;
+		} else if( call_argument->kind == TOKEN_TYPE ){
+			output_insert( &output_index, "call ", 5 );
+			output_insert( &output_index, &file_buffer[ call_argument->raw_index ], call_argument->bytes );
+			output_insert( &output_index, " @", 2 );
+			call_argument++;
+			assert( call_argument->kind == TOKEN_ROUTINE );
+			call_argument++;
+		} else {
+			assert( 0 );
+		}
 		output_insert( &output_index, &file_buffer[ token->raw_index ], token->bytes );
 		output_insert( &output_index, "( ", 2 );
 		token++;
 		while( call_argument->kind == TOKEN_ARGUMENT ){
 			call_argument++;
-			assert( call_argument->kind == TOKEN_TYPE );
-			if( token->kind == TOKEN_NUMBER ){
+			if( call_argument->kind == TOKEN_TYPE ){
 				output_insert( &output_index, &file_buffer[ call_argument->raw_index ], call_argument->bytes );
 				output_insert( &output_index, " ", 1 );
-				output_insert( &output_index, &file_buffer[ token->raw_index ], token->bytes );
-				token++;
-			} else if( token->kind == TOKEN_USE ){
-				output_insert( &output_index, &file_buffer[ call_argument->raw_index ], call_argument->bytes );
-				output_insert( &output_index, " ", 1 );
-				output_insert( &output_index, "%", 1 );
-				output_insert( &output_index, &file_buffer[ token->raw_index ], token->bytes );
-				token++;
+				if( token->kind == TOKEN_NUMBER ){
+					output_insert( &output_index, &file_buffer[ token->raw_index ], token->bytes );
+					call_argument += call_argument->child_count + 1;
+					token += token->child_count + 1;
+				} else if( token->kind == TOKEN_USE ){
+					output_insert( &output_index, "%", 1 );
+					output_insert( &output_index, &file_buffer[ token->raw_index ], token->bytes );
+					call_argument += call_argument->child_count + 1;
+					token += token->child_count + 1;
+				} else {
+					assert( 0 );
+				}
+			} else if( call_argument->kind == TOKEN_ARRAY ){
+				call_argument++;
+				if( token->kind == TOKEN_STRING ){
+					assert( call_argument->kind == TOKEN_TYPE && call_argument->bytes == 2 && memcmp( &file_buffer[ call_argument->raw_index ], "i8", 2 ) == 0 );
+					i32 string_literal_index = 0;
+					i32 llvm_output_string_index = __atomic_fetch_add( &llvm_output_string_count, 1, __ATOMIC_ACQ_REL );
+					char string_name_buffer[ 64 ];
+					i32 string_name_buffer_count = sprintf( string_name_buffer, "@.string.%d", llvm_output_string_index );
+					output_insert( &string_literal_index, string_name_buffer, string_name_buffer_count );
+					output_insert( &string_literal_index, " = constant [", 13 );
+					i32 i = 0;
+					i32 string_literal_bytes = 0;
+					while( i < token->bytes ){
+						if( file_buffer[ token->raw_index + i ] == '\\' ){
+							i += 3;
+						} else {
+							i += 1;
+						}
+						string_literal_bytes += 1;
+					}
+					char string_bytes_buffer[ 64 ];
+					i32 string_bytes_buffer_count = sprintf( string_bytes_buffer, "%d", string_literal_bytes );
+					output_insert( &string_literal_index, string_bytes_buffer, string_bytes_buffer_count );
+					output_insert( &string_literal_index, " x i8] c\"", 9 );
+					output_insert( &string_literal_index, &file_buffer[ token->raw_index ], token->bytes );
+					output_insert( &string_literal_index, "\"\n\n", 3 );
+					output_index += string_literal_index;
+					output_insert( &output_index, "i32 ", 4 );
+					output_insert( &output_index, string_bytes_buffer, string_bytes_buffer_count );
+					output_insert( &output_index, ", i32 ", 6 );
+					output_insert( &output_index, string_bytes_buffer, string_bytes_buffer_count );
+					output_insert( &output_index, ", ptr ", 6 );
+					output_insert( &output_index, string_name_buffer, string_name_buffer_count );
+				} else {
+					assert( 0 );
+				}
 			} else {
 				assert( 0 );
 			}
