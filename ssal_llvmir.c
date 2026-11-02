@@ -1453,29 +1453,93 @@ i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 n
 		output_insert( &nest_index, buffer, buffer_count );
 		output_insert( &nest_index, " = ", 3 );
 		nest_index += output_llvm_call( token, type_token, nest_index_start, nest_index, procedure_nest_count );
-		token += token->child_count + 1;
-/*
 	} else if( token->kind == TOKEN_INDEX ){
-					i32 nested_call_index = statement_start_index;
-					char buffer[ 64 ];
-					i32 nest_postfix_length = sprintf( buffer, "%d", *statement_nesting );
-					*statement_nesting += 1;
-					output_insert( &nested_call_index, "\t%", 2 );
-					output_insert( &nested_call_index, buffer, nest_postfix_length );
-					output_insert( &nested_call_index, " = load i32, ptr ", 41 );
-					output_insert( &nested_call_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
-					output_insert( &nested_call_index, &file_buffer[ token->raw_index ], token->bytes );
-					output_insert( &nested_call_index, ".data, i32 ", 11 );
-					token++;
-					output_insert( &nested_call_index, &file_buffer[ token->raw_index ], token->bytes );
-					output_insert( &nested_call_index, ", i32 0\n\t%", 10 );
-					nest_postfix_length = sprintf( buffer, "%d", *statement_nesting );
-					*statement_nesting += 1;
-					output_insert( &nested_call_index, buffer, nest_postfix_length );
-					output_insert( &nested_call_index, "\n", 1 );
-		assert( type_token->kind == TOKEN_TYPE );
-		assert( 0 );
+		if( type_token->kind == TOKEN_TYPE ){
+			assert( 0 );
+		} else if( type_token->kind == TOKEN_ARRAY ){
+/*
+	%.5 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 2
+	%.4 = load ptr, ptr %.5
+	%.3 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 1
+	%.2 = load i32, ptr %.3
+	%.1 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 0
+	%.0 = load i32, ptr %.1
+...
+i32 %.0, i32 %.2, ptr %.4
 */
+/* array count */
+			char buffer[ 64 ];
+			i32 buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &use_index, "i32 %", 5 );
+			output_insert( &use_index, buffer, buffer_count );
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = load i32, ptr %", 18 );
+			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, "\n", 1 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+			output_insert( &nest_index, ".data, i32 ", 11 );
+			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			output_insert( &nest_index, ", i32 0\n", 8 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+/* array capacity */
+			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &use_index, ", i32 %", 7 );
+			output_insert( &use_index, buffer, buffer_count );
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = load i32, ptr %", 18 );
+			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, "\n", 1 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+			output_insert( &nest_index, ".data, i32 ", 11 );
+			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			output_insert( &nest_index, ", i32 1\n", 8 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+/* array data */
+			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &use_index, ", ptr %", 7 );
+			output_insert( &use_index, buffer, buffer_count );
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = load ptr, ptr %", 18 );
+			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
+			*procedure_nest_count += 1;
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, "\n", 1 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+			output_insert( &nest_index, "\t%", 2 );
+			output_insert( &nest_index, buffer, buffer_count );
+			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+			output_insert( &nest_index, ".data, i32 ", 11 );
+			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			output_insert( &nest_index, ", i32 2\n", 8 );
+			use_index += nest_index - nest_index_start;
+			nest_index = nest_index_start;
+		} else {
+			assert( 0 );
+		}
 	} else {
 		assert( 0 );
 	}
@@ -1551,7 +1615,7 @@ void output_llvm_procedure( i32 procedure_index ){
 			}
 		}
 		output_append( " ){\n", 4 );
-		i32 procedure_nest_count = 1; /* has to start at one for llvm reasons */
+		i32 procedure_nest_count = 0;
 		assert( token < &statement[ procedure_token->child_index + procedure_token->child_count ]);
 		while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
 			while( token->kind == TOKEN_REGISTER || token->kind == TOKEN_CALL ){
