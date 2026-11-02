@@ -1458,11 +1458,11 @@ i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 n
 			assert( 0 );
 		} else if( type_token->kind == TOKEN_ARRAY ){
 /*
-	%.5 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 2
+	%.5 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 INDEX, i32 2
 	%.4 = load ptr, ptr %.5
-	%.3 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 1
+	%.3 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 INDEX, i32 1
 	%.2 = load i32, ptr %.3
-	%.1 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 0, i32 0
+	%.1 = getelementptr { i32, i32, ptr }, ptr %argument.data, i32 INDEX, i32 0
 	%.0 = load i32, ptr %.1
 ...
 i32 %.0, i32 %.2, ptr %.4
