@@ -1467,7 +1467,7 @@ i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 n
 ...
 i32 %.0, i32 %.2, ptr %.4
 */
-/* array count */
+/* array count load */
 			char buffer[ 64 ];
 			i32 buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
 			*procedure_nest_count += 1;
@@ -1482,6 +1482,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, "\n", 1 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
+/* array count gep */
 			output_insert( &nest_index, "\t%", 2 );
 			output_insert( &nest_index, buffer, buffer_count );
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
@@ -1491,7 +1492,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, ", i32 0\n", 8 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
-/* array capacity */
+/* array capacity load */
 			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
 			*procedure_nest_count += 1;
 			output_insert( &use_index, ", i32 %", 7 );
@@ -1505,6 +1506,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, "\n", 1 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
+/* array capacity gep */
 			output_insert( &nest_index, "\t%", 2 );
 			output_insert( &nest_index, buffer, buffer_count );
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
@@ -1514,7 +1516,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, ", i32 1\n", 8 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
-/* array data */
+/* array data load */
 			buffer_count = sprintf( buffer, ".%d", *procedure_nest_count );
 			*procedure_nest_count += 1;
 			output_insert( &use_index, ", ptr %", 7 );
@@ -1528,6 +1530,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, "\n", 1 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
+/* array data gep */
 			output_insert( &nest_index, "\t%", 2 );
 			output_insert( &nest_index, buffer, buffer_count );
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
