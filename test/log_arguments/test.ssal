@@ -1,5 +1,7 @@
 start procedure i32 : argument [][]i8:
 		!(loop 0)
+
 	loop routine index i32:
-		log_error i32 = (log [argument 1])
-		?(cmp_equal index <argument count>) !(return 0) !(loop (add index 1))
+		log_error i32 = (log [argument index])
+		next_index i32 = (add index 1)
+		?(cmp_equal next_index <argument count>) !(return 0) !(loop next_index)
