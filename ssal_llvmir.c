@@ -1653,23 +1653,91 @@ void output_llvm_procedure( i32 procedure_index ){
 						}
 					} else if( token->kind == TOKEN_ARRAY ){
 						token++;
-						assert( token->kind == TOKEN_TYPE && token->bytes == 2 && memcmp( &file_buffer[ token->raw_index ], "i8", 2 ) == 0 );
-						token++;
-						assert( token->kind == TOKEN_STRING );
-						string_report report = output_llvm_string( token );
-						token -= 3;
-						output_append( ".count = add i32 0, ", 20 );
-						output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
-						output_append( "\n\t%", 3 );
-						output_append( &file_buffer[ token->raw_index ], token->bytes );
-						output_append( ".capacity = add i32 0, ", 23 );
-						output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
-						output_append( "\n\t%", 3 );
-						output_append( &file_buffer[ token->raw_index ], token->bytes );
-						output_append( ".data = getelementptr ptr, ptr ", 31 );
-						output_append( (char*) &scratch[ report.name_index ], report.name_bytes );
-						output_append( "\n", 1 );
-						token += 4;
+						if( token->kind == TOKEN_TYPE ){
+							token++;
+						} else {
+							assert( 0 );
+						}
+						if( token->kind == TOKEN_STRING ){
+							string_report report = output_llvm_string( token );
+							token -= 3;
+							output_append( ".count = add i32 0, ", 20 );
+							output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
+							output_append( "\n\t%", 3 );
+							output_append( &file_buffer[ token->raw_index ], token->bytes );
+							output_append( ".capacity = add i32 0, ", 23 );
+							output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
+							output_append( "\n\t%", 3 );
+							output_append( &file_buffer[ token->raw_index ], token->bytes );
+							output_append( ".data = getelementptr ptr, ptr ", 31 );
+							output_append( (char*) &scratch[ report.name_index ], report.name_bytes );
+							output_append( "\n", 1 );
+							token += 4;
+						} else if( token->kind == TOKEN_INDEX ){
+/*
+	%.2 = getelementptr { i32, i32, ptr }, ptr %ARRAY.data, i32 INDEX, i32 2
+	%.1 = getelementptr { i32, i32, ptr }, ptr %ARRAY.data, i32 INDEX, i32 1
+	%.0 = getelementptr { i32, i32, ptr }, ptr %ARRAY.data, i32 INDEX, i32 0
+	%REGISTER.count = load i32, ptr %.0
+	%REGISTER.capacity = load i32, ptr %.1
+	%REGISTER.data = load ptr, ptr %.2
+*/
+
+							i32 nest_index = statement_start_index;
+							char buffer[ 64 ];
+/* array count load */
+							i32 buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+							procedure_nest_count += 1;
+							output_append( ".count = load i32, ptr %", 24 );
+							output_append( buffer, buffer_count );
+							output_append( "\n", 1 );
+/* array count gep */
+							output_insert( &nest_index, "\t%", 2 );
+							output_insert( &nest_index, buffer, buffer_count );
+							output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+							output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+							output_insert( &nest_index, ".data, i32 ", 11 );
+							nest_index += output_llvm_nest_value( token + 1, token - 1, statement_start_index + 2, nest_index, &procedure_nest_count );
+							output_insert( &nest_index, ", i32 0\n", 8 );
+							nest_index = statement_start_index;
+/* array capacity load */
+							buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+							procedure_nest_count += 1;
+							output_append( "\t%", 2 );
+							output_append( &file_buffer[ ( token - 3 )->raw_index ], ( token - 3 )->bytes );
+							output_append( ".capacity = load i32, ptr %", 27 );
+							output_append( buffer, buffer_count );
+							output_append( "\n", 1 );
+/* array capacity gep */
+							output_insert( &nest_index, "\t%", 2 );
+							output_insert( &nest_index, buffer, buffer_count );
+							output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+							output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+							output_insert( &nest_index, ".data, i32 ", 11 );
+							nest_index += output_llvm_nest_value( token + 1, token - 1, statement_start_index + 2, nest_index, &procedure_nest_count );
+							output_insert( &nest_index, ", i32 1\n", 8 );
+							nest_index = statement_start_index;
+/* array data load */
+							buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+							procedure_nest_count += 1;
+							output_append( "\t%", 2 );
+							output_append( &file_buffer[ ( token - 3 )->raw_index ], ( token - 3 )->bytes );
+							output_append( ".data = load ptr, ptr %", 23 );
+							output_append( buffer, buffer_count );
+							output_append( "\n", 1 );
+/* array data gep */
+							output_insert( &nest_index, "\t%", 2 );
+							output_insert( &nest_index, buffer, buffer_count );
+							output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
+							output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
+							output_insert( &nest_index, ".data, i32 ", 11 );
+							nest_index += output_llvm_nest_value( token + 1, token - 1, statement_start_index + 2, nest_index, &procedure_nest_count );
+							output_insert( &nest_index, ", i32 2\n", 8 );
+							nest_index = statement_start_index;
+							token += 2;
+						} else {
+							assert( 0 );
+						}
 					} else {
 						assert( 0 );
 					}
