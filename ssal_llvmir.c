@@ -78,6 +78,7 @@ typedef double f64;
 
 #define FLAG_INTRENSIC 0x1
 #define FLAG_EXTERNAL 0x2
+#define FLAG_COMPARE 0x4
 
 char* token_kind_string[ 256 ] = {
 	"error       ",
@@ -897,16 +898,48 @@ void validate_call( syntax_token procedure_token, syntax_token* type_token, synt
 	}
 	if( called_token->flags & FLAG_INTRENSIC ){
 		token->flags |= FLAG_INTRENSIC;
-		if(( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "add", 3 ) == 0 ) ||
-		   ( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "sub", 3 ) == 0 ) ||
-		   ( called_token->bytes == 9 && memcmp( &file_buffer[ called_token->raw_index ], "cmp_equal", 9 ) == 0 )){
-			token++;
-			validate_expression( procedure_token, type_token, token );
-			token += token->child_count + 1;
-			validate_expression( procedure_token, type_token, token );
-			token += token->child_count + 1;
+		if( called_token->flags & FLAG_COMPARE ){
+			token->flags |= FLAG_COMPARE;
+			if( called_token->bytes == 9 && memcmp( &file_buffer[ called_token->raw_index ], "cmp_equal", 9 ) == 0 ){
+				token++;
+				if( token->kind != TOKEN_USE ){
+					compiler_error( *token, "Must compare intrensic types." );
+				}
+				token->kind = TOKEN_TYPE;
+				syntax_token* i = type;
+				while( 1 ){
+					if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+						if( i->flags & FLAG_INTRENSIC ){
+							token->flags |= FLAG_INTRENSIC;
+							break;
+						} else {
+							compiler_error( *token, "Must compare intrensic types." );
+						}
+					}
+					i++;
+					if( i == &type[ type_count ]){
+						compiler_error( *token, "Could not find type." );
+					}
+				}
+				token++;
+				validate_expression( procedure_token, type_token, token );
+				token += token->child_count + 1;
+				validate_expression( procedure_token, type_token, token );
+				token += token->child_count + 1;
+			} else {
+				assert( 0 );
+			}
 		} else {
-			assert( 0 );
+			if(( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "add", 3 ) == 0 ) ||
+			   ( called_token->bytes == 3 && memcmp( &file_buffer[ called_token->raw_index ], "sub", 3 ) == 0 )){
+				token++;
+				validate_expression( procedure_token, type_token, token );
+				token += token->child_count + 1;
+				validate_expression( procedure_token, type_token, token );
+				token += token->child_count + 1;
+			} else {
+				assert( 0 );
+			}
 		}
 	} else {
 		syntax_token* signature_token = &statement[ called_token->child_index ];
@@ -1488,7 +1521,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 			output_insert( &nest_index, ".data, i32 ", 11 );
-			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 			output_insert( &nest_index, ", i32 0\n", 8 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
@@ -1512,7 +1545,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 			output_insert( &nest_index, ".data, i32 ", 11 );
-			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 			output_insert( &nest_index, ", i32 1\n", 8 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
@@ -1536,7 +1569,7 @@ i32 %.0, i32 %.2, ptr %.4
 			output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 			output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 			output_insert( &nest_index, ".data, i32 ", 11 );
-			nest_index += output_llvm_nest_value( token + 1, type_token, nest_index_start, nest_index, procedure_nest_count );
+			nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 			output_insert( &nest_index, ", i32 2\n", 8 );
 			use_index += nest_index - nest_index_start;
 			nest_index = nest_index_start;
@@ -1617,7 +1650,7 @@ void output_llvm_procedure( i32 procedure_index ){
 				token++;
 			}
 		}
-		output_append( " ){\n", 4 );
+		output_append( " ){\nprocedure:\n", 16 );
 		i32 procedure_nest_count = 0;
 		assert( token < &statement[ procedure_token->child_index + procedure_token->child_count ]);
 		while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
@@ -1682,7 +1715,6 @@ void output_llvm_procedure( i32 procedure_index ){
 	%REGISTER.capacity = load i32, ptr %.1
 	%REGISTER.data = load ptr, ptr %.2
 */
-
 							i32 nest_index = statement_start_index;
 							char buffer[ 64 ];
 /* array count load */
@@ -1759,15 +1791,139 @@ void output_llvm_procedure( i32 procedure_index ){
 					output_append( " ", 1 );
 					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
 					output_append( "\n", 1 );
+					token += token->child_count + 1;
+				} else {
+					output_append( "\tbr label %", 11 );
+					output_append( &file_buffer[ token->raw_index ], token->bytes );
+					output_append( "\n", 1 );
+					token += token->child_count + 1;
+					if( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
+						output_append( &file_buffer[ token->raw_index ], token->bytes );
+						output_append( ":\n", 2 );
+						goto output_llvm_label;
+					} else {
+						break;
+					}
+				}
+			} else if( token->kind == TOKEN_CONDITIONAL ){
+				token++;
+				i32 statement_start_index = scratch_count;
+				char buffer[ 64 ];
+				i32 buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+				procedure_nest_count += 1;
+				output_append( "\t%", 2 );
+				output_append( buffer, buffer_count );
+				output_append( " = icmp ", 8 );
+				if( token->bytes == 9 && memcmp( &file_buffer[ token->raw_index ], "cmp_equal", 9 ) == 0 ){
+					output_append( "eq ", 3 );
 				} else {
 					assert( 0 );
 				}
-			} else if( token->kind == TOKEN_CONDITIONAL ){
-				assert( 0 );
+				token++;
+				assert( token->kind == TOKEN_TYPE && token->flags & FLAG_INTRENSIC );
+				output_append( &file_buffer[ token->raw_index ], token->bytes );
+				output_append( " ", 1 );
+				syntax_token* type_token = token;
+				token++;
+				output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+				output_append( ", ", 2 );
+				token += token->child_count + 1;
+				output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+				token += token->child_count + 1;
+				output_append( "\n\tbr i1 %", 9 );
+				output_append( buffer, buffer_count );
+				output_append( ", label %", 9 );
+				assert( token->kind == TOKEN_JUMP );
+				i32 label_index = scratch_count;
+				if( token->bytes == 6 && memcmp( &file_buffer[ token->raw_index ], "return", 6 ) == 0 ){
+					i32 buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+					procedure_nest_count += 1;
+					output_insert( &label_index, buffer, buffer_count );
+					output_append( buffer, buffer_count );
+					output_append( ":\n\tret ", 7 );
+					token++;
+					output_append( &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
+					output_append( " ", 1 );
+					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
+					output_append( "\n", 1 );
+				} else {
+					output_insert( &label_index, &file_buffer[ token->raw_index ], token->bytes );
+				}
+				token += token->child_count + 1;
+				assert( token->kind == TOKEN_JUMP );
+				output_insert( &label_index, ", label %", 9 );
+				if( token->bytes == 6 && memcmp( &file_buffer[ token->raw_index ], "return", 6 ) == 0 ){
+					i32 buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+					procedure_nest_count += 1;
+					output_insert( &label_index, buffer, buffer_count );
+					output_append( buffer, buffer_count );
+					output_append( ":\n\tret ", 7 );
+					token++;
+					output_append( &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
+					output_append( " ", 1 );
+					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
+					output_append( "\n", 1 );
+				} else {
+					output_insert( &label_index, &file_buffer[ token->raw_index ], token->bytes );
+				}
+					token += token->child_count + 1;
+				output_insert( &label_index, "\n", 1 );
+				if( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
+					output_append( &file_buffer[ token->raw_index ], token->bytes );
+					output_append( ":\n", 2 );
+					goto output_llvm_label;
+				} else {
+					break;
+				}
 			} else {
 				assert( 0 );
 			}
-			break;
+			continue;
+			{
+output_llvm_label: /* label label hehe */
+				i32 statement_start_index = scratch_count;
+				assert( token->kind == TOKEN_ROUTINE );
+				syntax_token* routine_token = token;
+				token++;
+				while( token->kind == TOKEN_ARGUMENT ){
+					output_append( "\t%", 2 );
+					output_append( &file_buffer[ token->raw_index ], token->bytes );
+					output_append( " = phi ", 7 );
+					token++;
+					if( token->kind == TOKEN_TYPE ){
+						output_append( &file_buffer[ token->raw_index ], token->bytes );
+						token--;
+						syntax_token* jump_routine_token = &statement[ procedure->child_index ];
+						syntax_token* jump_token = jump_routine_token;
+						while( jump_token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
+							if( jump_token->kind == TOKEN_ROUTINE ){
+								jump_routine_token = jump_token;
+							}
+							if( jump_token->kind == TOKEN_JUMP && jump_token->bytes == routine_token->bytes && memcmp( &file_buffer[ jump_token->raw_index ], &file_buffer[ routine_token->raw_index ], routine_token->bytes ) == 0 ){
+								output_append( " [ ", 3 );
+								jump_token++;
+								if( jump_token->kind == TOKEN_NUMBER ){
+									output_append( &file_buffer[ jump_token->raw_index ], jump_token->bytes );
+								} else if( jump_token->kind == TOKEN_USE ){
+									output_append( "%", 1 );
+									output_append( &file_buffer[ jump_token->raw_index ], jump_token->bytes );
+								} else {
+									assert( 0 );
+								}
+								output_append( ", %", 3 );
+								output_append( &file_buffer[ jump_routine_token->raw_index ], jump_routine_token->bytes );
+								output_append( " ],", 3 );
+							}
+							jump_token++;
+						}
+						scratch_count -= 1;
+					} else {
+						assert( 0 );
+					}
+					output_append( "\n", 1 );
+					token += token->child_count + 1;
+				}
+			}
 		}
 		output_append( "}\n\n", 3 );
 	}
@@ -1951,7 +2107,7 @@ i32 main( i32 argc, char* argv[] ){
 		procedure[ procedure_count ].child_index = -1;
 		procedure[ procedure_count ].child_count = 0;
 		procedure[ procedure_count ].kind = TOKEN_PROCEDURE;
-		procedure[ procedure_count ].flags = FLAG_INTRENSIC;
+		procedure[ procedure_count ].flags = FLAG_INTRENSIC | FLAG_COMPARE;
 		procedure_count++;
 		procedure[ procedure_count ].raw_index = file_buffer_count;
 		procedure[ procedure_count ].bytes = 4;
