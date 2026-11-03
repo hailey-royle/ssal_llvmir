@@ -1879,9 +1879,8 @@ void output_llvm_procedure( i32 procedure_index ){
 				assert( 0 );
 			}
 			continue;
-			{
 output_llvm_label: /* label label hehe */
-				i32 statement_start_index = scratch_count;
+			{
 				assert( token->kind == TOKEN_ROUTINE );
 				syntax_token* routine_token = token;
 				token++;
