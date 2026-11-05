@@ -63,6 +63,7 @@ typedef double f64;
 #define TOKEN_ARRAY 13
 #define TOKEN_INDEX 14
 #define TOKEN_COMPOSITE 15
+#define TOKEN_ARRAY_LITERAL 16
 
 #define TOKEN_IDENTIFIER 128
 #define TOKEN_SIGNATURE_END 130
@@ -81,22 +82,23 @@ typedef double f64;
 #define FLAG_COMPARE 0x4
 
 char* token_kind_string[ 256 ] = {
-	"error       ",
-	"procedure   ",
-	"routine     ",
-	"call        ",
-	"jump        ",
-	"contitional ",
-	"register    ",
-	"argument    ",
-	"use         ",
-	"number      ",
-	"string      ",
-	"address     ",
-	"type        ",
-	"array       ",
-	"index       ",
-	"composite   ",
+	"error         ",
+	"procedure     ",
+	"routine       ",
+	"call          ",
+	"jump          ",
+	"contitional   ",
+	"register      ",
+	"argument      ",
+	"use           ",
+	"number        ",
+	"string        ",
+	"address       ",
+	"type          ",
+	"array         ",
+	"index         ",
+	"composite     ",
+	"array literal ",
 };
 
 typedef struct {
@@ -271,7 +273,12 @@ void print_tokens(){
 				if( statement[ j ].kind == TOKEN_ROUTINE ){
 					printf( "\t%s        %d [%.*s]\n", token_kind_string[ statement[ j ].kind ], statement[ j ].child_count, statement[ j ].bytes, &file_buffer[ statement[ j ].raw_index ]);
 				} else {
-					printf( "\t\t%s%d [%.*s]\n", token_kind_string[ statement[ j ].kind ], statement[ j ].child_count, statement[ j ].bytes, &file_buffer[ statement[ j ].raw_index ]);
+					printf( "\t\t%s%d [%.*s]", token_kind_string[ statement[ j ].kind ], statement[ j ].child_count, statement[ j ].bytes, &file_buffer[ statement[ j ].raw_index ]);
+					if( statement[ j ].flags & FLAG_INTRENSIC ){
+						printf( "[intrensic]\n" );
+					} else {
+						printf( "\n" );
+					}
 				}
 				j++;
 			}
@@ -473,6 +480,10 @@ syntax_token next_token( source_file* file ){
 		token.bytes = 1;
 		token.kind = TOKEN_COMPOSITE_END;
 		file->parse++;
+	} else if( *file->parse == '/' ){
+		token.bytes = 1;
+		token.kind = TOKEN_ARRAY_LITERAL;
+		file->parse++;
 	} else {
 		token.bytes = 1;
 		compiler_error( token, "Invalid chracter" );
@@ -550,6 +561,19 @@ void parse_expression( source_file* file, syntax_token token ){
 		if( token.kind != TOKEN_COMPOSITE_END ){
 			compiler_error( token, "Expected composite member end '>'." );
 		}
+	} else if( token.kind == TOKEN_ARRAY_LITERAL ){
+		syntax_token* array_literal = push_token( token );
+		i32 array_literal_start = scratch_count;
+		token = next_token( file );
+		if( token.kind != TOKEN_ARRAY_START ){
+			compiler_error( token, "Expected array literal start '['." );
+		}
+		token = next_token( file );
+		while( token.kind != TOKEN_ARRAY_END ){
+			parse_expression( file, token );
+			token = next_token( file );
+		}
+		array_literal->child_count = scratch_count - array_literal_start;
 	} else {
 		compiler_error( token, "Invalid expression value" );
 	}
@@ -592,6 +616,7 @@ void parse_type( source_file* file, syntax_token token ){
 		}
 	}
 	token.kind = TOKEN_TYPE;
+	token.flags |= FLAG_INTRENSIC;
 	if( type_token == NULL ){
 		type_token = push_token( token );
 		type_start = scratch_count;
@@ -937,6 +962,30 @@ void validate_call( syntax_token procedure_token, syntax_token* type_token, synt
 				token += token->child_count + 1;
 				validate_expression( procedure_token, type_token, token );
 				token += token->child_count + 1;
+			} else if( called_token->bytes == 8 && memcmp( &file_buffer[ called_token->raw_index ], "truncate", 8 ) == 0 ){
+				token++;
+				if( token->kind != TOKEN_USE ){
+					compiler_error( *token, "Must compare intrensic types." );
+				}
+				token->kind = TOKEN_TYPE;
+				syntax_token* i = type;
+				while( 1 ){
+					if( i->bytes == token->bytes && memcmp( &file_buffer[ i->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) == 0 ){
+						if( i->flags & FLAG_INTRENSIC ){
+							token->flags |= FLAG_INTRENSIC;
+							break;
+						} else {
+							compiler_error( *token, "Must compare intrensic types." );
+						}
+					}
+					i++;
+					if( i == &type[ type_count ]){
+						compiler_error( *token, "Could not find type." );
+					}
+				}
+				validate_expression( procedure_token, token, token + 1 );
+				token++;
+				token += token->child_count + 1;
 			} else {
 				assert( 0 );
 			}
@@ -1018,11 +1067,23 @@ void validate_expression( syntax_token procedure_token, syntax_token* type_token
 			compiler_error( *token, "Invalid type for a number." );
 		}
 	} else if( token->kind == TOKEN_STRING ){
-		if( type_token->kind != TOKEN_ARRAY && type_token->bytes == 2 && memcmp( &file_buffer[ type_token->raw_index ], "i8", 2 ) == 0 ){
+		if( type_token->kind != TOKEN_ARRAY && ( type_token + 1 )->bytes == 2 && memcmp( &file_buffer[ ( type_token + 1 )->raw_index ], "i8", 2 ) == 0 ){
 			compiler_error( *token, "Invalid type for a string, must be []i8." );
 		}
 	} else if( token->kind == TOKEN_CALL ){
 		validate_call( procedure_token, type_token, token );
+	} else if( token->kind == TOKEN_ARRAY_LITERAL ){
+		if( type_token->kind != TOKEN_ARRAY ){
+			compiler_error( *token, "Invalid type for a string, must be []i8." );
+		}
+		type_token++;
+		assert( type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_TYPE || type_token->kind == TOKEN_ADDRESS );
+		syntax_token* end_token = token + token->child_count;
+		token++;
+		while( token <= end_token ){
+			validate_expression( procedure_token, type_token, token );
+			token += token->child_count + 1;
+		}
 	} else if( token->kind == TOKEN_USE || token->kind == TOKEN_INDEX || token->kind == TOKEN_COMPOSITE ){
 		assert( file_buffer[ token->raw_index ] != '[' );
 /* check match in procedure arguments */
@@ -1127,7 +1188,6 @@ found_use_def:
 			assert( 0 );
 		}
 	} else {
-		print_tokens();
 		compiler_error( *token, "Invalid expression value" );
 	}
 }
@@ -1319,14 +1379,6 @@ void output_insert( i32* index, char* data, i32 bytes ){
 	*index += bytes;
 }
 
-typedef struct {
-	i32 total_bytes;
-	i32 name_index;
-	i32 name_bytes;
-	i32 length_index;
-	i32 length_bytes;
-} string_report;
-
 i32 string_token_length( syntax_token token ){
 	assert( token.kind == TOKEN_STRING );
 	i32 i = 0;
@@ -1341,6 +1393,27 @@ i32 string_token_length( syntax_token token ){
 	}
 	return string_bytes;
 }
+
+i32 array_literal_count( syntax_token* token ){
+	assert( token != NULL );
+	assert( token->kind == TOKEN_ARRAY_LITERAL );
+	i32 array_count = 0;
+	syntax_token* array_literal_end = token + token->child_count;
+	token++;
+	while( token <= array_literal_end ){
+		array_count += 1;
+		token += token->child_count + 1;
+	}
+	return array_count;
+}
+
+typedef struct {
+	i32 total_bytes;
+	i32 name_index;
+	i32 name_bytes;
+	i32 length_index;
+	i32 length_bytes;
+} string_report;
 
 string_report output_llvm_string( syntax_token* token ){
 	assert( token != NULL );
@@ -1370,16 +1443,27 @@ i32 output_llvm_call( syntax_token* token, syntax_token* type_token, i32 nest_in
 	i32 use_index_start = use_index;
 	if( token->flags & FLAG_INTRENSIC ){
 		assert( type_token != NULL );
-		output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-		output_insert( &use_index, " ", 1 );
-		output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
-		token++;
-		output_insert( &use_index, " ", 1 );
-		use_index += output_llvm_nest_value( token, type_token, nest_index, use_index, procedure_nest_count );
-		token += token->child_count + 1;
-		output_insert( &use_index, ", ", 2 );
-		use_index += output_llvm_nest_value( token, type_token, nest_index, use_index, procedure_nest_count );
-		output_insert( &use_index, "\n", 1 );
+		if( token->bytes == 8 && memcmp( &file_buffer[ token->raw_index ], "truncate", 8 ) == 0 ){
+			output_insert( &use_index, "trunc ", 6 );
+			token++;
+			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+			output_insert( &use_index, " ", 1 );
+			use_index += output_llvm_nest_value( token + 1, token, nest_index, use_index, procedure_nest_count );
+			output_insert( &use_index, " to ", 4 );
+			output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+			output_insert( &use_index, "\n", 1 );
+		} else {
+			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+			output_insert( &use_index, " ", 1 );
+			output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+			token++;
+			output_insert( &use_index, " ", 1 );
+			use_index += output_llvm_nest_value( token, type_token, nest_index, use_index, procedure_nest_count );
+			token += token->child_count + 1;
+			output_insert( &use_index, ", ", 2 );
+			use_index += output_llvm_nest_value( token, type_token, nest_index, use_index, procedure_nest_count );
+			output_insert( &use_index, "\n", 1 );
+		}
 	} else {
 		type_token = procedure;
 		while( type_token->bytes != token->bytes || memcmp( &file_buffer[ type_token->raw_index ], &file_buffer[ token->raw_index ], token->bytes ) != 0 ){
@@ -1650,7 +1734,7 @@ void output_llvm_procedure( i32 procedure_index ){
 				token++;
 			}
 		}
-		output_append( " ){\nprocedure:\n", 16 );
+		output_append( " ){\nprocedure:\n", 15 );
 		i32 procedure_nest_count = 0;
 		assert( token < &statement[ procedure_token->child_index + procedure_token->child_count ]);
 		while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
@@ -1685,27 +1769,71 @@ void output_llvm_procedure( i32 procedure_index ){
 							assert( 0 );
 						}
 					} else if( token->kind == TOKEN_ARRAY ){
+						syntax_token* register_token = token - 1;
 						token++;
-						if( token->kind == TOKEN_TYPE ){
-							token++;
-						} else {
-							assert( 0 );
-						}
+						assert( token->kind == TOKEN_TYPE );
+						syntax_token* type_token = token;
+						token++;
 						if( token->kind == TOKEN_STRING ){
 							string_report report = output_llvm_string( token );
-							token -= 3;
 							output_append( ".count = add i32 0, ", 20 );
 							output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
 							output_append( "\n\t%", 3 );
-							output_append( &file_buffer[ token->raw_index ], token->bytes );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
 							output_append( ".capacity = add i32 0, ", 23 );
 							output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
 							output_append( "\n\t%", 3 );
-							output_append( &file_buffer[ token->raw_index ], token->bytes );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
 							output_append( ".data = getelementptr ptr, ptr ", 31 );
 							output_append( (char*) &scratch[ report.name_index ], report.name_bytes );
 							output_append( "\n", 1 );
-							token += 4;
+							token++;
+						} else if( token->kind == TOKEN_ARRAY_LITERAL ){
+							i32 array_count = array_literal_count( token );
+							token++;
+							char buffer[ 64 ];
+							i32 buffer_count = sprintf( buffer, "%d", array_count );
+							output_append( ".count = add i32 0, ", 20 );
+							output_append( buffer, buffer_count );
+							output_append( "\n\t%", 3 );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
+							output_append( ".capacity = add i32 0, ", 23 );
+							output_append( buffer, buffer_count );
+							output_append( "\n\t%", 3 );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
+							output_append( ".data = alloca [", 16 );
+							output_append( buffer, buffer_count );
+							output_append( " x ", 3 );
+							output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
+							output_append( "]\n\t%", 4 );
+							i32 i = 0;
+							while( i < array_count ){
+								buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
+								i32 gep_nest_count = procedure_nest_count;
+								procedure_nest_count += 1;
+								output_append( buffer, buffer_count );
+								output_append( " = getelementptr ", 17 );
+								output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
+								output_append( ", ptr %", 7 );
+								output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
+								output_append( ".data, i32 ", 11 );
+								buffer_count = sprintf( buffer, "%d", i );
+								output_append( buffer, buffer_count );
+								output_append( "\n\tstore ", 8 );
+								output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
+								output_append( " ", 1 );
+								i32 foo = output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+								printf( "%d", foo );
+								token += token->child_count + 1;
+								output_append( ", ptr %", 7 );
+								buffer_count = sprintf( buffer, ".%d", gep_nest_count );
+								output_append( buffer, buffer_count );
+								i += 1;
+								if( i < array_count ){
+									output_append( "\n\t%", 3 );
+								}
+							}
+							output_append( "\n", 1 );
 						} else if( token->kind == TOKEN_INDEX ){
 /*
 	%.2 = getelementptr { i32, i32, ptr }, ptr %ARRAY.data, i32 INDEX, i32 2
@@ -2101,6 +2229,14 @@ i32 main( i32 argc, char* argv[] ){
 		procedure[ procedure_count ].flags = FLAG_INTRENSIC;
 		procedure_count++;
 		procedure[ procedure_count ].raw_index = file_buffer_count;
+		procedure[ procedure_count ].bytes = 8;
+		buffer_append( file_buffer, &file_buffer_count, "truncate", procedure[ procedure_count ].bytes );
+		procedure[ procedure_count ].child_index = -1;
+		procedure[ procedure_count ].child_count = 0;
+		procedure[ procedure_count ].kind = TOKEN_PROCEDURE;
+		procedure[ procedure_count ].flags = FLAG_INTRENSIC;
+		procedure_count++;
+		procedure[ procedure_count ].raw_index = file_buffer_count;
 		procedure[ procedure_count ].bytes = 9;
 		buffer_append( file_buffer, &file_buffer_count, "cmp_equal", procedure[ procedure_count ].bytes );
 		procedure[ procedure_count ].child_index = -1;
@@ -2137,7 +2273,7 @@ i32 main( i32 argc, char* argv[] ){
 			statement[ statement_count ].child_index = 0;
 			statement[ statement_count ].child_count = 0;
 			statement[ statement_count ].kind = TOKEN_TYPE;
-			statement[ statement_count ].flags = 0;
+			statement[ statement_count ].flags = FLAG_INTRENSIC;
 			statement_count++;
 		procedure[ procedure_count ].raw_index = file_buffer_count;
 		procedure[ procedure_count ].bytes = 3;
@@ -2153,7 +2289,7 @@ i32 main( i32 argc, char* argv[] ){
 			statement[ statement_count ].child_index = 0;
 			statement[ statement_count ].child_count = 0;
 			statement[ statement_count ].kind = TOKEN_TYPE;
-			statement[ statement_count ].flags = 0;
+			statement[ statement_count ].flags = FLAG_INTRENSIC;
 			statement_count++;
 			statement[ statement_count ].raw_index = file_buffer_count;
 			statement[ statement_count ].bytes = 9;
@@ -2184,7 +2320,7 @@ i32 main( i32 argc, char* argv[] ){
 			statement[ statement_count ].child_index = 0;
 			statement[ statement_count ].child_count = 0;
 			statement[ statement_count ].kind = TOKEN_TYPE;
-			statement[ statement_count ].flags = 0;
+			statement[ statement_count ].flags = FLAG_INTRENSIC;
 			statement_count++;
 	}
 	i32 name_bytes = strlen( argv[ 1 ]);

@@ -1,0 +1,12 @@
+start procedure i32 : argument [][]i8:
+		log_error0 i32 = (log "Arguments:\0a")
+		!(loop 0)
+
+	loop routine index i32:
+		number_string []i8 = /[ 32 32 (add (truncate i32 index) 48) 58 32 32 ]
+                                      { "  "  (add (truncate i32 index) 48) ":  " }
+		log_error1 i32 = (log number_string)
+		log_error2 i32 = (log [argument index])
+		log_error3 i32 = (log "\0a")
+		next_index i32 = (add index 1)
+		?(cmp_equal i32 next_index <argument count>) !(return 0) !(loop next_index)

@@ -1,3 +1,5 @@
+rm test_results.log
+
 for D in */; do
 	( cd ${D}; ./test.sh; ) &
 done
