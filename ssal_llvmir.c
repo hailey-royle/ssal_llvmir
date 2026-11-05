@@ -1514,6 +1514,8 @@ i32 output_llvm_call( syntax_token* token, syntax_token* type_token, i32 nest_in
 	return use_index - use_index_start;
 }
 
+i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count );
+
 i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count ){
 	assert( token != NULL );
 	assert( type_token != NULL );
@@ -1660,6 +1662,11 @@ i32 %.0, i32 %.2, ptr %.4
 		} else {
 			assert( 0 );
 		}
+	} else if( token->kind == TOKEN_ARRAY_LITERAL ){
+		assert( type_token->kind == TOKEN_ARRAY );
+		type_token++;
+		assert( type_token->kind == TOKEN_TYPE );
+		nest_index += output_llvm_array_literal( token, NULL, type_token, nest_index, use_index, procedure_nest_count );
 	} else {
 		assert( 0 );
 	}
@@ -1690,12 +1697,14 @@ i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token
 	assert( use_index <= scratch_count );
 	assert( procedure_nest_count != NULL );
 	assert( *procedure_nest_count >= 0 );
+	i32 use_index_start = use_index;
+	i32 store_index = nest_index;
+	i32 store_index_start = store_index;
 	i32 array_count = array_literal_count( token );
 	char count_buffer[ 16 ];
 	i32 count_buffer_count = sprintf( count_buffer, "%d", array_count );
 	char anon_buffer[ 16 ];
 	i32 anon_buffer_count = 0;
-	i32 store_index = nest_index;
 	i32 data_name_index = -1;
 	i32 data_name_bytes = 0;
 	if( register_token != NULL ){
@@ -1719,17 +1728,17 @@ i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token
 		store_index = use_index;
 		nest_index = use_index;
 	} else {
-		data_name_bytes = anon_buffer_count + 1;
 		anon_buffer_count = next_nest_name( anon_buffer, procedure_nest_count );
+		data_name_bytes = anon_buffer_count + 1;
 		output_insert( &use_index, "i32 ", 4 );
 		output_insert( &use_index, count_buffer, count_buffer_count );
 		output_insert( &use_index, ", i32 ", 6 );
 		output_insert( &use_index, count_buffer, count_buffer_count );
 		output_insert( &use_index, ", ptr %", 7 );
-		data_name_index = use_index - 1;
 		output_insert( &use_index, anon_buffer, anon_buffer_count );
 		output_insert( &use_index, " ", 1 );
 		output_insert( &store_index, "\t%", 2 );
+		data_name_index = store_index - 1;
 		output_insert( &store_index, anon_buffer, anon_buffer_count );
 		output_insert( &store_index, " = alloca [", 11 );
 		output_insert( &store_index, count_buffer, count_buffer_count );
@@ -1756,14 +1765,14 @@ i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token
 		output_insert( &store_index, "\n\tstore ", 8 );
 		output_insert( &store_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
 		output_insert( &store_index, " ", 1 );
-		i32 nest_count = output_llvm_nest_value( token, type_token, nest_index, store_index, procedure_nest_count );
-		store_index += nest_count;
+		store_index += output_llvm_nest_value( token, type_token, nest_index, store_index, procedure_nest_count );
 		token += token->child_count + 1;
 		output_insert( &store_index, ", ptr %", 7 );
 		output_insert( &store_index, anon_buffer, anon_buffer_count );
 		output_insert( &store_index, "\n", 1 );
 		i += 1;
 	}
+	return ( use_index - use_index_start ) + ( store_index - store_index_start );
 }
 
 void output_llvm_procedure( i32 procedure_index ){
