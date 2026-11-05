@@ -1,0 +1,4 @@
+start procedure i32 : argument [][]i8:
+	hello_world []i8 = /[ 72 101 108 108 111 32 87 111 114 108 100 33 10 ]
+	log_error i32 = (log hello_world)
+	!(return 0)
