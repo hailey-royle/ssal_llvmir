@@ -1666,6 +1666,106 @@ i32 %.0, i32 %.2, ptr %.4
 	return ( nest_index - nest_index_start ) + ( use_index - use_index_start );
 }
 
+i32 next_nest_name( char buffer[ 16 ], i32* nest_count ){
+	i32 buffer_count = sprintf( buffer, ".%d", *nest_count );
+	*nest_count += 1;
+	return buffer_count;
+}
+
+i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count ){
+	assert( token != NULL );
+	assert( token->kind == TOKEN_ARRAY_LITERAL );
+	if( register_token != NULL ){
+		assert( register_token->kind == TOKEN_REGISTER );
+		assert( nest_index == use_index );
+	} else {
+		assert( nest_index < use_index );
+	}
+	assert( type_token != NULL );
+/* will support arrays of arbitrary type, currently only supports intrensic types.
+	assert( type_token->kind == TOKEN_TYPE || type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS );
+*/
+	assert( type_token->kind == TOKEN_TYPE );
+	assert( nest_index > 0 );
+	assert( use_index <= scratch_count );
+	assert( procedure_nest_count != NULL );
+	assert( *procedure_nest_count >= 0 );
+	i32 array_count = array_literal_count( token );
+	char count_buffer[ 16 ];
+	i32 count_buffer_count = sprintf( count_buffer, "%d", array_count );
+	char anon_buffer[ 16 ];
+	i32 anon_buffer_count = 0;
+	i32 store_index = nest_index;
+	i32 data_name_index = -1;
+	i32 data_name_bytes = 0;
+	if( register_token != NULL ){
+		data_name_bytes = register_token->bytes + 6;
+		output_insert( &use_index, "\t%", 2 );
+		output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+		output_insert( &use_index, ".count = add i32 0, ", 20 );
+		output_insert( &use_index, count_buffer, count_buffer_count );
+		output_insert( &use_index, "\n\t%", 3 );
+		output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+		output_insert( &use_index, ".capacity = add i32 0, ", 23 );
+		output_insert( &use_index, count_buffer, count_buffer_count );
+		output_insert( &use_index, "\n\t%", 3 );
+		data_name_index = use_index - 1;
+		output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+		output_insert( &use_index, ".data = alloca [", 16 );
+		output_insert( &use_index, count_buffer, count_buffer_count );
+		output_insert( &use_index, " x ", 3 );
+		output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+		output_insert( &use_index, "]\n", 2 );
+		store_index = use_index;
+		nest_index = use_index;
+	} else {
+		data_name_bytes = anon_buffer_count + 1;
+		anon_buffer_count = next_nest_name( anon_buffer, procedure_nest_count );
+		output_insert( &use_index, "i32 ", 4 );
+		output_insert( &use_index, count_buffer, count_buffer_count );
+		output_insert( &use_index, ", i32 ", 6 );
+		output_insert( &use_index, count_buffer, count_buffer_count );
+		output_insert( &use_index, ", ptr %", 7 );
+		data_name_index = use_index - 1;
+		output_insert( &use_index, anon_buffer, anon_buffer_count );
+		output_insert( &use_index, " ", 1 );
+		output_insert( &store_index, "\t%", 2 );
+		output_insert( &store_index, anon_buffer, anon_buffer_count );
+		output_insert( &store_index, " = alloca [", 11 );
+		output_insert( &store_index, count_buffer, count_buffer_count );
+		output_insert( &store_index, " x ", 3 );
+		output_insert( &store_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+		output_insert( &store_index, "]\n", 2 );
+		nest_index = store_index;
+	}
+	assert( data_name_index > 0)
+	assert( data_name_bytes > 0)
+	token++; /* set to first element in array */
+	i32 i = 0;
+	while( i < array_count ){
+		anon_buffer_count = next_nest_name( anon_buffer, procedure_nest_count );
+		count_buffer_count = sprintf( count_buffer, "%d", i );
+		output_insert( &store_index, "\t%", 2 );
+		output_insert( &store_index, anon_buffer, anon_buffer_count );
+		output_insert( &store_index, " = getelementptr ", 17 );
+		output_insert( &store_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+		output_insert( &store_index, ", ptr ", 6 );
+		output_insert( &store_index, (char*) &scratch[ data_name_index ], data_name_bytes );
+		output_insert( &store_index, ", i32 ", 6 );
+		output_insert( &store_index, count_buffer, count_buffer_count );
+		output_insert( &store_index, "\n\tstore ", 8 );
+		output_insert( &store_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+		output_insert( &store_index, " ", 1 );
+		i32 nest_count = output_llvm_nest_value( token, type_token, nest_index, store_index, procedure_nest_count );
+		store_index += nest_count;
+		token += token->child_count + 1;
+		output_insert( &store_index, ", ptr %", 7 );
+		output_insert( &store_index, anon_buffer, anon_buffer_count );
+		output_insert( &store_index, "\n", 1 );
+		i += 1;
+	}
+}
+
 void output_llvm_procedure( i32 procedure_index ){
 	assert( procedure_index >= 0 );
 	syntax_token* procedure_token = &procedure[ procedure_index ];
@@ -1741,10 +1841,11 @@ void output_llvm_procedure( i32 procedure_index ){
 			while( token->kind == TOKEN_REGISTER || token->kind == TOKEN_CALL ){
 				i32 statement_start_index = scratch_count;
 				if( token->kind == TOKEN_REGISTER ){
-					output_append( "\t%", 2 );
-					output_append( &file_buffer[ token->raw_index ], token->bytes );
+					syntax_token* register_token = token;
 					token++;
 					if( token->kind == TOKEN_TYPE ){
+						output_append( "\t%", 2 );
+						output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
 						syntax_token* type_token = token;
 						token++;
 						if( token->kind == TOKEN_NUMBER ){
@@ -1769,13 +1870,14 @@ void output_llvm_procedure( i32 procedure_index ){
 							assert( 0 );
 						}
 					} else if( token->kind == TOKEN_ARRAY ){
-						syntax_token* register_token = token - 1;
 						token++;
 						assert( token->kind == TOKEN_TYPE );
 						syntax_token* type_token = token;
 						token++;
 						if( token->kind == TOKEN_STRING ){
 							string_report report = output_llvm_string( token );
+							output_append( "\t%", 2 );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
 							output_append( ".count = add i32 0, ", 20 );
 							output_append( (char*) &scratch[ report.length_index ], report.length_bytes );
 							output_append( "\n\t%", 3 );
@@ -1789,51 +1891,8 @@ void output_llvm_procedure( i32 procedure_index ){
 							output_append( "\n", 1 );
 							token++;
 						} else if( token->kind == TOKEN_ARRAY_LITERAL ){
-							i32 array_count = array_literal_count( token );
-							token++;
-							char buffer[ 64 ];
-							i32 buffer_count = sprintf( buffer, "%d", array_count );
-							output_append( ".count = add i32 0, ", 20 );
-							output_append( buffer, buffer_count );
-							output_append( "\n\t%", 3 );
-							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
-							output_append( ".capacity = add i32 0, ", 23 );
-							output_append( buffer, buffer_count );
-							output_append( "\n\t%", 3 );
-							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
-							output_append( ".data = alloca [", 16 );
-							output_append( buffer, buffer_count );
-							output_append( " x ", 3 );
-							output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
-							output_append( "]\n\t%", 4 );
-							i32 i = 0;
-							while( i < array_count ){
-								buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
-								i32 gep_nest_count = procedure_nest_count;
-								procedure_nest_count += 1;
-								output_append( buffer, buffer_count );
-								output_append( " = getelementptr ", 17 );
-								output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
-								output_append( ", ptr %", 7 );
-								output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
-								output_append( ".data, i32 ", 11 );
-								buffer_count = sprintf( buffer, "%d", i );
-								output_append( buffer, buffer_count );
-								output_append( "\n\tstore ", 8 );
-								output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
-								output_append( " ", 1 );
-								i32 foo = output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
-								printf( "%d", foo );
-								token += token->child_count + 1;
-								output_append( ", ptr %", 7 );
-								buffer_count = sprintf( buffer, ".%d", gep_nest_count );
-								output_append( buffer, buffer_count );
-								i += 1;
-								if( i < array_count ){
-									output_append( "\n\t%", 3 );
-								}
-							}
-							output_append( "\n", 1 );
+							output_llvm_array_literal( token, register_token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+							token += token->child_count + 1;
 						} else if( token->kind == TOKEN_INDEX ){
 /*
 	%.2 = getelementptr { i32, i32, ptr }, ptr %ARRAY.data, i32 INDEX, i32 2
@@ -1845,6 +1904,8 @@ void output_llvm_procedure( i32 procedure_index ){
 */
 							i32 nest_index = statement_start_index;
 							char buffer[ 64 ];
+							output_append( "\t%", 2 );
+							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
 /* array count load */
 							i32 buffer_count = sprintf( buffer, ".%d", procedure_nest_count );
 							procedure_nest_count += 1;
