@@ -1413,7 +1413,7 @@ i32 next_nest_name( char buffer[ 16 ], i32* nest_count ){
 	return buffer_count;
 }
 
-i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count );
+i32 output_llvm_expression( syntax_token* token, syntax_token* register_token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count );
 
 i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count ){
 	assert( token != NULL );
@@ -1501,7 +1501,7 @@ i32 output_llvm_array_literal( syntax_token* token, syntax_token* register_token
 		output_insert( &store_index, "\n\tstore ", 8 );
 		output_insert( &store_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
 		output_insert( &store_index, " ", 1 );
-		store_index += output_llvm_nest_value( token, type_token, nest_index, store_index, procedure_nest_count );
+		store_index += output_llvm_expression( token, NULL, type_token, nest_index, store_index, procedure_nest_count );
 		token += token->child_count + 1;
 		output_insert( &store_index, ", ptr %", 7 );
 		output_insert( &store_index, anon_buffer, anon_buffer_count );
@@ -1552,7 +1552,7 @@ i32 output_llvm_index( syntax_token* token, syntax_token* register_token, syntax
 		output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 		output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 		output_insert( &nest_index, ".data, i32 ", 11 );
-		nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
+		nest_index += output_llvm_expression( token + 1, NULL, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 		output_insert( &nest_index, ", i32 0\n", 8 );
 		use_index += nest_index - nest_index_start;
 		nest_index = nest_index_start;
@@ -1578,7 +1578,7 @@ i32 output_llvm_index( syntax_token* token, syntax_token* register_token, syntax
 		output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 		output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 		output_insert( &nest_index, ".data, i32 ", 11 );
-		nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
+		nest_index += output_llvm_expression( token + 1, NULL, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 		output_insert( &nest_index, ", i32 1\n", 8 );
 		use_index += nest_index - nest_index_start;
 		nest_index = nest_index_start;
@@ -1604,7 +1604,7 @@ i32 output_llvm_index( syntax_token* token, syntax_token* register_token, syntax
 		output_insert( &nest_index, " = getelementptr { i32, i32, ptr }, ptr %", 41 );
 		output_insert( &nest_index, &file_buffer[ token->raw_index ], token->bytes );
 		output_insert( &nest_index, ".data, i32 ", 11 );
-		nest_index += output_llvm_nest_value( token + 1, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
+		nest_index += output_llvm_expression( token + 1, NULL, &type[ 0 ], nest_index_start, nest_index, procedure_nest_count );
 		output_insert( &nest_index, ", i32 2\n", 8 );
 		use_index += nest_index - nest_index_start;
 		nest_index = nest_index_start;
@@ -1715,7 +1715,7 @@ i32 output_llvm_call( syntax_token* token, syntax_token* register_token, syntax_
 			token++;
 			output_insert( &call_index, &file_buffer[ trunc_type_token->raw_index ], trunc_type_token->bytes );
 			output_insert( &call_index, " ", 1 );
-			call_index += output_llvm_nest_value( token, trunc_type_token, nest_index, call_index, procedure_nest_count );
+			call_index += output_llvm_expression( token, NULL, trunc_type_token, nest_index, call_index, procedure_nest_count );
 			output_insert( &call_index, " to ", 4 );
 			output_insert( &call_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
 			output_insert( &call_index, "\n", 1 );
@@ -1727,11 +1727,11 @@ i32 output_llvm_call( syntax_token* token, syntax_token* register_token, syntax_
 			token++;
 			output_insert( &call_index, " ", 1 );
 			assert( nest_index != call_index );
-			call_index += output_llvm_nest_value( token, type_token, nest_index, call_index, procedure_nest_count );
+			call_index += output_llvm_expression( token, NULL, type_token, nest_index, call_index, procedure_nest_count );
 			token += token->child_count + 1;
 			output_insert( &call_index, ", ", 2 );
 			assert( nest_index != call_index );
-			call_index += output_llvm_nest_value( token, type_token, nest_index, call_index, procedure_nest_count );
+			call_index += output_llvm_expression( token, NULL, type_token, nest_index, call_index, procedure_nest_count );
 			output_insert( &call_index, "\n", 1 );
 		}
 	} else {
@@ -1762,7 +1762,7 @@ i32 output_llvm_call( syntax_token* token, syntax_token* register_token, syntax_
 				output_insert( &call_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
 				output_insert( &call_index, " ", 1 );
 			}
-			call_index += output_llvm_nest_value( token, type_token, nest_index, call_index, procedure_nest_count );
+			call_index += output_llvm_expression( token, NULL, type_token, nest_index, call_index, procedure_nest_count );
 			token += token->child_count + 1;
 			type_token += type_token->child_count + 1;
 			if( type_token->kind == TOKEN_ARGUMENT ){
@@ -1774,49 +1774,111 @@ i32 output_llvm_call( syntax_token* token, syntax_token* register_token, syntax_
 	return ( use_index - use_index_start ) + ( call_index - call_index_start );
 }
 
-i32 output_llvm_nest_value( syntax_token* token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count ){
+i32 output_llvm_expression( syntax_token* token, syntax_token* register_token, syntax_token* type_token, i32 nest_index, i32 use_index, i32* procedure_nest_count ){
 	assert( token != NULL );
+	if( register_token != NULL ){
+		assert( register_token->kind == TOKEN_REGISTER );
+		assert( nest_index == use_index );
+	} else {
+		assert( nest_index < use_index );
+	}
 	assert( type_token != NULL );
+	assert( type_token->kind == TOKEN_TYPE || type_token->kind == TOKEN_ARRAY || type_token->kind == TOKEN_ADDRESS );
+	assert( nest_index > 0 );
+	assert( use_index <= scratch_count );
 	assert( procedure_nest_count != NULL );
+	assert( *procedure_nest_count >= 0 );
 	i32 nest_index_start = nest_index;
 	i32 use_index_start = use_index;
 	if( token->kind == TOKEN_NUMBER ){
-		output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-	} else if( token->kind == TOKEN_USE ){
-		if( type_token->kind == TOKEN_TYPE ){
-			output_insert( &use_index, "%", 1 );
+		if( register_token != NULL ){
+			output_insert( &use_index, "\t%", 2 );
+			output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+			output_insert( &use_index, " = add ", 7 );
+			output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+			output_insert( &use_index, " 0, ", 4 );
 			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-		} else if( type_token->kind == TOKEN_ARRAY ){
-/* must be in a call otherwise needs to be handled elsewhere */
-			output_insert( &use_index, "i32 %", 5 );
-			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-			output_insert( &use_index, ".count, i32 %", 13 );
-			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-			output_insert( &use_index, ".capacity, ptr %", 16 );
-			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-			output_insert( &use_index, ".data", 5 );
+			output_insert( &use_index, "\n", 1 );
 		} else {
-			assert( 0 );
+			output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+		}
+	} else if( token->kind == TOKEN_USE ){
+		if( register_token != NULL ){
+			if( type_token->kind == TOKEN_TYPE ){
+				output_insert( &use_index, "\t%", 2 );
+				output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+				output_insert( &use_index, " = add ", 7 );
+				output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+				output_insert( &use_index, " 0, %", 5 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				output_insert( &use_index, "\n", 1 );
+			} else {
+				assert( 0 );
+			}
+		} else {
+			if( type_token->kind == TOKEN_TYPE ){
+				output_insert( &use_index, "%", 1 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+			} else if( type_token->kind == TOKEN_ARRAY ){
+				output_insert( &use_index, "i32 %", 5 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				output_insert( &use_index, ".count, i32 %", 13 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				output_insert( &use_index, ".capacity, ptr %", 16 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				output_insert( &use_index, ".data", 5 );
+			} else {
+				assert( 0 );
+			}
 		}
 	} else if( token->kind == TOKEN_COMPOSITE ){
-		assert( type_token->kind == TOKEN_TYPE );
-		output_insert( &use_index, "%", 1 );
-		output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
-		token++;
-		assert( token->kind == TOKEN_COMPOSITE );
-		output_insert( &use_index, ".", 1 );
-		output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+		if( register_token != NULL ){
+			if( type_token->kind == TOKEN_TYPE ){
+				output_insert( &use_index, "\t%", 2 );
+				output_insert( &use_index, &file_buffer[ register_token->raw_index ], register_token->bytes );
+				output_insert( &use_index, " = add ", 7 );
+				output_insert( &use_index, &file_buffer[ type_token->raw_index ], type_token->bytes );
+				output_insert( &use_index, " 0, %", 5 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				syntax_token* end_token = token + token->child_count;
+				token++;
+				while( token <= end_token ){
+					assert( token->kind == TOKEN_COMPOSITE );
+					output_insert( &use_index, ".", 1 );
+					output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+					token++;
+				}
+				output_insert( &use_index, "\n", 1 );
+			} else {
+				assert( 0 );
+			}
+		} else {
+			if( type_token->kind == TOKEN_TYPE ){
+				output_insert( &use_index, "%", 1 );
+				output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+				syntax_token* end_token = token + token->child_count;
+				token++;
+				while( token <= end_token ){
+					assert( token->kind == TOKEN_COMPOSITE );
+					output_insert( &use_index, ".", 1 );
+					output_insert( &use_index, &file_buffer[ token->raw_index ], token->bytes );
+					token++;
+				}
+			} else {
+				assert( 0 );
+			}
+		}
 	} else if( token->kind == TOKEN_STRING ){
-		use_index += output_llvm_string( token, NULL, use_index, procedure_nest_count );
+		use_index += output_llvm_string( token, register_token, use_index, procedure_nest_count );
 	} else if( token->kind == TOKEN_CALL ){
-		use_index += output_llvm_call( token, NULL, type_token, nest_index, use_index, procedure_nest_count );
+		use_index += output_llvm_call( token, register_token, type_token, nest_index, use_index, procedure_nest_count );
 	} else if( token->kind == TOKEN_INDEX ){
-		use_index += output_llvm_index( token, NULL, type_token, nest_index, use_index, procedure_nest_count );
+		use_index += output_llvm_index( token, register_token, type_token, nest_index, use_index, procedure_nest_count );
 	} else if( token->kind == TOKEN_ARRAY_LITERAL ){
 		assert( type_token->kind == TOKEN_ARRAY );
 		type_token++;
 		assert( type_token->kind == TOKEN_TYPE );
-		nest_index += output_llvm_array_literal( token, NULL, type_token, nest_index, use_index, procedure_nest_count );
+		nest_index += output_llvm_array_literal( token, register_token, type_token, nest_index, use_index, procedure_nest_count );
 	} else {
 		assert( 0 );
 	}
@@ -1896,60 +1958,18 @@ void output_llvm_procedure( i32 procedure_index ){
 		assert( token < &statement[ procedure_token->child_index + procedure_token->child_count ]);
 		while( token < &statement[ procedure_token->child_index + procedure_token->child_count ]){
 			while( token->kind == TOKEN_REGISTER || token->kind == TOKEN_CALL ){
-				i32 statement_start_index = scratch_count;
 				if( token->kind == TOKEN_REGISTER ){
 					syntax_token* register_token = token;
 					token++;
 					syntax_token* type_token = token;
-					if( token->kind == TOKEN_TYPE ){
+					while( token->kind == TOKEN_TYPE || token->kind == TOKEN_ARRAY || token->kind == TOKEN_ADDRESS ){
 						token++;
-						if( token->kind == TOKEN_NUMBER ){
-							output_append( "\t%", 2 );
-							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
-							output_append( " = add ", 7 );
-							output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
-							output_append( " 0, ", 4 );
-							output_append( &file_buffer[ token->raw_index ], token->bytes );
-							output_append( "\n", 1 );
-							token++;
-						} else if( token->kind == TOKEN_USE ){
-							output_append( "\t%", 2 );
-							output_append( &file_buffer[ register_token->raw_index ], register_token->bytes );
-							output_append( " = add ", 7 );
-							output_append( &file_buffer[ type_token->raw_index ], type_token->bytes );
-							output_append( " 0, %", 5 );
-							output_append( &file_buffer[ token->raw_index ], token->bytes );
-							output_append( "\n", 1 );
-							token++;
-						} else if( token->kind == TOKEN_CALL ){
-							output_llvm_call( token, register_token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
-							token += token->child_count + 1;
-						} else {
-							assert( 0 );
-						}
-					} else if( token->kind == TOKEN_ARRAY ){
-						token++;
-						assert( token->kind == TOKEN_TYPE );
-						token++;
-						if( token->kind == TOKEN_STRING ){
-							output_llvm_string( token, register_token, scratch_count, &procedure_nest_count );
-						} else if( token->kind == TOKEN_ARRAY_LITERAL ){
-							output_llvm_array_literal( token, register_token, type_token + 1, statement_start_index, scratch_count, &procedure_nest_count );
-						} else if( token->kind == TOKEN_INDEX ){
-							output_llvm_index( token, register_token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
-						} else {
-							assert( 0 );
-						}
-							token += token->child_count + 1;
-					} else {
-						assert( 0 );
 					}
+					output_llvm_expression( token, register_token, type_token, scratch_count, scratch_count, &procedure_nest_count );
 				} else if( token->kind == TOKEN_CALL ){
-					output_llvm_call( token, NULL, NULL, statement_start_index, scratch_count, &procedure_nest_count );
-					token += token->child_count + 1;
-				} else {
-					assert( 0 );
+					output_llvm_call( token, NULL, NULL, scratch_count, scratch_count, &procedure_nest_count );
 				}
+				token += token->child_count + 1;
 			}
 			assert( token->kind == TOKEN_CONDITIONAL || token->kind == TOKEN_JUMP );
 			if( token->kind == TOKEN_JUMP ){
@@ -1959,7 +1979,7 @@ void output_llvm_procedure( i32 procedure_index ){
 					token++;
 					output_append( &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
 					output_append( " ", 1 );
-					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
+					output_llvm_expression( token, NULL, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
 					output_append( "\n", 1 );
 					token += token->child_count + 1;
 				} else {
@@ -1995,10 +2015,10 @@ void output_llvm_procedure( i32 procedure_index ){
 				output_append( " ", 1 );
 				syntax_token* type_token = token;
 				token++;
-				output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+				output_llvm_expression( token, NULL, type_token, statement_start_index, scratch_count, &procedure_nest_count );
 				output_append( ", ", 2 );
 				token += token->child_count + 1;
-				output_llvm_nest_value( token, type_token, statement_start_index, scratch_count, &procedure_nest_count );
+				output_llvm_expression( token, NULL, type_token, statement_start_index, scratch_count, &procedure_nest_count );
 				token += token->child_count + 1;
 				output_append( "\n\tbr i1 %", 9 );
 				output_append( buffer, buffer_count );
@@ -2014,7 +2034,7 @@ void output_llvm_procedure( i32 procedure_index ){
 					token++;
 					output_append( &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
 					output_append( " ", 1 );
-					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
+					output_llvm_expression( token, NULL, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
 					output_append( "\n", 1 );
 				} else {
 					output_insert( &label_index, &file_buffer[ token->raw_index ], token->bytes );
@@ -2031,7 +2051,7 @@ void output_llvm_procedure( i32 procedure_index ){
 					token++;
 					output_append( &file_buffer[ statement[ procedure_token->child_index ].raw_index ], statement[ procedure_token->child_index ].bytes );
 					output_append( " ", 1 );
-					output_llvm_nest_value( token, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
+					output_llvm_expression( token, NULL, &statement[ procedure_token->child_index ], statement_start_index, scratch_count, &procedure_nest_count );
 					output_append( "\n", 1 );
 				} else {
 					output_insert( &label_index, &file_buffer[ token->raw_index ], token->bytes );
